@@ -5,7 +5,8 @@ import {
   Megaphone, 
   Search, 
   Calendar, 
-  MessageSquare 
+  MessageSquare,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +30,11 @@ const navigation = [
     name: 'Timetable',
     href: '/timetable',
     icon: Calendar,
+  },
+  {
+    name: 'Skill Exchange',
+    href: '/skill-exchange',
+    icon: BookOpen,
   },
   {
     name: 'Complaints',

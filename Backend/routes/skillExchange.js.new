@@ -1,0 +1,1042 @@
+const express = require('express');
+const PeerTeacher = require('../models/PeerTeacher');
+const ContactRequest = require('../models/ContactRequest');
+const LearningSession = require('../models/LearningSession');
+const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { authenticateToken, requireAdmin, optionalAuth } = require('../middleware/auth');
+
+const router = express.Router();
+
+// ---------- PEER TEACHER ROUTES ----------
+
+// Get all peer teachers with filtering and pagination
+router.get('/teachers', optionalAuth, async (req, res) => {
+  try {
+    const { 
+      skill, 
+      type, 
+      search, 
+      isActive = true,
+      limit = 20, 
+      page = 1,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+    
+    const query = { isActive };
+    
+    if (skill && skill !== 'all') {
+      query.skills = { $regex: skill, $options: 'i' };
+    }
+    
+    if (type && type !== 'all') {
+      query.type = type;
+    }
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { bio: { $regex: search, $options: 'i' } },
+        { skills: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    const teachers = await PeerTeacher.find(query)
+      .sort(sortOptions)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('addedBy', 'name email')
+      .populate('verifiedBy', 'name');
+
+    const total = await PeerTeacher.countDocuments(query);
+
+    res.json({
+      teachers,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: teachers.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get peer teachers error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get single peer teacher by ID
+router.get('/teachers/:id', optionalAuth, async (req, res) => {
+  try {
+    const teacher = await PeerTeacher.findById(req.params.id)
+      .populate('addedBy', 'name email role')
+      .populate('verifiedBy', 'name');
+
+    if (!teacher) {
+      return res.status(404).json({ message: 'Peer teacher not found' });
+    }
+
+    res.json(teacher);
+  } catch (error) {
+    console.error('Get peer teacher error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Add new peer teacher
+router.post('/teachers', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      name, 
+      email, 
+      phone, 
+      linkedinUrl, 
+      skills, 
+      type, 
+      availability, 
+      bio 
+    } = req.body;
+
+    if (!name || !email || !skills || !type || !availability) {
+      return res.status(400).json({ 
+        message: 'Name, email, skills, type, and availability are required' 
+      });
+    }
+
+    if (!Array.isArray(skills) || skills.length === 0) {
+      return res.status(400).json({ message: 'At least one skill is required' });
+    }
+
+    if (!Array.isArray(availability) || availability.length === 0) {
+      return res.status(400).json({ message: 'At least one availability slot is required' });
+    }
+
+    if (!['peer', 'senior'].includes(type)) {
+      return res.status(400).json({ message: 'Type must be either "peer" or "senior"' });
+    }
+
+    // Check if teacher with same email already exists
+    const existingTeacher = await PeerTeacher.findOne({ email, isActive: true });
+    if (existingTeacher) {
+      return res.status(400).json({ message: 'A teacher with this email already exists' });
+    }
+
+    const teacher = new PeerTeacher({
+      name,
+      email,
+      phone,
+      linkedinUrl,
+      skills,
+      type,
+      availability,
+      bio: bio || '',
+      addedBy: req.user._id,
+      isVerified: req.user.role === 'admin' // Auto-verify if added by admin
+    });
+
+    if (req.user.role === 'admin') {
+      teacher.verifiedBy = req.user._id;
+      teacher.verifiedAt = new Date();
+    }
+
+    await teacher.save();
+    await teacher.populate('addedBy', 'name email');
+
+    // Create notification for admins to review if added by non-admin
+    if (req.user.role !== 'admin') {
+      const admins = await User.find({ role: 'admin' });
+      
+      for (const admin of admins) {
+        await new Notification({
+          recipient: admin._id,
+          sender: req.user._id,
+          title: 'New Peer Teacher Registration',
+          message: `${name} has registered as a ${type} teacher. Please review and verify.`,
+          type: 'system',
+          relatedModel: 'PeerTeacher',
+          relatedId: teacher._id,
+          link: `/admin/skill-exchange/teachers/${teacher._id}`
+        }).save();
+      }
+    }
+
+    res.status(201).json({
+      message: 'Peer teacher added successfully',
+      teacher
+    });
+  } catch (error) {
+    console.error('Create peer teacher error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update peer teacher
+router.put('/teachers/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, 
+      email, 
+      phone, 
+      linkedinUrl, 
+      skills, 
+      availability, 
+      bio,
+      isActive,
+      isVerified
+    } = req.body;
+
+    // Find teacher
+    const teacher = await PeerTeacher.findById(id);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Peer teacher not found' });
+    }
+
+    // Check permissions: only admin or original creator can update
+    if (req.user.role !== 'admin' && !teacher.addedBy.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized to update this profile' });
+    }
+
+    // Update basic fields
+    if (name) teacher.name = name;
+    if (phone !== undefined) teacher.phone = phone;
+    if (linkedinUrl !== undefined) teacher.linkedinUrl = linkedinUrl;
+    if (bio !== undefined) teacher.bio = bio;
+    if (Array.isArray(skills) && skills.length > 0) teacher.skills = skills;
+    if (Array.isArray(availability) && availability.length > 0) teacher.availability = availability;
+    
+    // Only admin can update these fields
+    if (req.user.role === 'admin') {
+      if (email) teacher.email = email;
+      if (isActive !== undefined) teacher.isActive = isActive;
+      
+      if (isVerified !== undefined && isVerified !== teacher.isVerified) {
+        teacher.isVerified = isVerified;
+        if (isVerified) {
+          teacher.verifiedBy = req.user._id;
+          teacher.verifiedAt = new Date();
+
+          // Create notification for teacher
+          await new Notification({
+            recipient: teacher.addedBy,
+            title: 'Profile Verified',
+            message: 'Your teacher profile has been verified by an administrator.',
+            type: 'system',
+            relatedModel: 'PeerTeacher',
+            relatedId: teacher._id,
+            link: `/skill-exchange/profile`
+          }).save();
+        } else {
+          teacher.verifiedBy = null;
+          teacher.verifiedAt = null;
+        }
+      }
+    }
+
+    await teacher.save();
+    await teacher.populate('addedBy', 'name email');
+    await teacher.populate('verifiedBy', 'name');
+
+    res.json({ 
+      message: 'Peer teacher updated successfully',
+      teacher
+    });
+  } catch (error) {
+    console.error('Update peer teacher error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Delete peer teacher (soft delete)
+router.delete('/teachers/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const teacher = await PeerTeacher.findById(id);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Peer teacher not found' });
+    }
+
+    // Check permissions: only admin or original creator can delete
+    if (req.user.role !== 'admin' && !teacher.addedBy.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized to delete this profile' });
+    }
+
+    // Soft delete by marking as inactive
+    teacher.isActive = false;
+    await teacher.save();
+
+    res.json({ message: 'Peer teacher deleted successfully' });
+  } catch (error) {
+    console.error('Delete peer teacher error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get available skills list
+router.get('/skills', async (req, res) => {
+  try {
+    // Aggregate all unique skills from active teachers
+    const result = await PeerTeacher.aggregate([
+      { $match: { isActive: true } },
+      { $unwind: '$skills' },
+      { $group: { _id: '$skills' } },
+      { $project: { _id: 0, name: '$_id' } },
+      { $sort: { name: 1 } }
+    ]);
+    
+    const skills = result.map(item => item.name);
+    res.json({ skills });
+  } catch (error) {
+    console.error('Get skills error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- CONTACT REQUEST ROUTES ----------
+
+// Get all contact requests (with filtering for role-specific access)
+router.get('/contact-requests', authenticateToken, async (req, res) => {
+  try {
+    const { status, limit = 20, page = 1 } = req.query;
+    
+    // Build query based on user role
+    let query = {};
+    
+    if (req.user.role === 'admin') {
+      // Admins can see all requests
+      if (status) {
+        query.status = status;
+      }
+    } else {
+      // Regular users can only see their own requests
+      // Either as requester or as the teacher
+      const userTeacherProfiles = await PeerTeacher.find({ addedBy: req.user._id });
+      const teacherIds = userTeacherProfiles.map(profile => profile._id);
+      
+      query = {
+        $or: [
+          { requesterId: req.user._id },
+          { teacherId: { $in: teacherIds } }
+        ]
+      };
+      
+      if (status) {
+        query.status = status;
+      }
+    }
+    
+    const contactRequests = await ContactRequest.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('teacherId', 'name email type')
+      .populate('requesterId', 'name email');
+      
+    const total = await ContactRequest.countDocuments(query);
+    
+    res.json({
+      contactRequests,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: contactRequests.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get contact requests error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get single contact request by ID
+router.get('/contact-requests/:id', authenticateToken, async (req, res) => {
+  try {
+    const contactRequest = await ContactRequest.findById(req.params.id)
+      .populate('teacherId', 'name email type skills availability')
+      .populate('requesterId', 'name email');
+      
+    if (!contactRequest) {
+      return res.status(404).json({ message: 'Contact request not found' });
+    }
+    
+    // Check if user has permission to view this request
+    if (
+      req.user.role !== 'admin' && 
+      !contactRequest.requesterId?._id.equals(req.user._id)
+    ) {
+      // Check if user is the teacher
+      const isTeacher = await PeerTeacher.exists({
+        _id: contactRequest.teacherId._id,
+        addedBy: req.user._id
+      });
+      
+      if (!isTeacher) {
+        return res.status(403).json({ message: 'Not authorized to view this contact request' });
+      }
+    }
+    
+    res.json(contactRequest);
+  } catch (error) {
+    console.error('Get contact request error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Create new contact request
+router.post('/contact-requests', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      teacherId, 
+      skill, 
+      message, 
+      preferredTime 
+    } = req.body;
+    
+    if (!teacherId || !skill || !message) {
+      return res.status(400).json({ 
+        message: 'Teacher ID, skill, and message are required' 
+      });
+    }
+    
+    // Check if teacher exists
+    const teacher = await PeerTeacher.findById(teacherId);
+    if (!teacher || !teacher.isActive) {
+      return res.status(404).json({ message: 'Teacher not found or inactive' });
+    }
+    
+    // Create contact request
+    const contactRequest = new ContactRequest({
+      teacherId,
+      teacherName: teacher.name,
+      requesterName: req.user.name,
+      requesterEmail: req.user.email,
+      requesterId: req.user._id,
+      skill,
+      message,
+      preferredTime: preferredTime || 'Flexible'
+    });
+    
+    await contactRequest.save();
+    
+    // Create notification for teacher
+    const teacherUser = await User.findById(teacher.addedBy);
+    if (teacherUser) {
+      await new Notification({
+        recipient: teacherUser._id,
+        sender: req.user._id,
+        title: 'New Contact Request',
+        message: `${req.user.name} has requested to learn ${skill} from you.`,
+        type: 'contact_request',
+        relatedModel: 'ContactRequest',
+        relatedId: contactRequest._id,
+        link: `/skill-exchange/requests/${contactRequest._id}`
+      }).save();
+    }
+    
+    res.status(201).json({
+      message: 'Contact request sent successfully',
+      contactRequest
+    });
+  } catch (error) {
+    console.error('Create contact request error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update contact request
+router.put('/contact-requests/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      status, 
+      responseMessage, 
+      sessionDate, 
+      sessionDuration,
+      rating,
+      feedback
+    } = req.body;
+    
+    const contactRequest = await ContactRequest.findById(id);
+    if (!contactRequest) {
+      return res.status(404).json({ message: 'Contact request not found' });
+    }
+    
+    // Check permissions based on role and relationship to request
+    const teacher = await PeerTeacher.findById(contactRequest.teacherId);
+    
+    const isTeacher = teacher && teacher.addedBy.equals(req.user._id);
+    const isRequester = contactRequest.requesterId && contactRequest.requesterId.equals(req.user._id);
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isTeacher && !isRequester && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to update this contact request' });
+    }
+    
+    // Different roles can update different fields
+    if (isTeacher || isAdmin) {
+      // Teacher/admin can change status and provide response
+      if (status) {
+        if (!['pending', 'accepted', 'declined', 'completed'].includes(status)) {
+          return res.status(400).json({ message: 'Invalid status value' });
+        }
+        
+        contactRequest.status = status;
+        
+        // If accepting, require session date
+        if (status === 'accepted' && !sessionDate && !contactRequest.sessionDate) {
+          return res.status(400).json({ message: 'Session date is required when accepting a request' });
+        }
+      }
+      
+      if (responseMessage !== undefined) {
+        contactRequest.responseMessage = responseMessage;
+      }
+      
+      if (sessionDate) {
+        contactRequest.sessionDate = new Date(sessionDate);
+      }
+      
+      if (sessionDuration) {
+        contactRequest.sessionDuration = sessionDuration;
+      }
+    }
+    
+    if (isRequester || isAdmin) {
+      // Learner/admin can provide rating and feedback
+      if (rating !== undefined) {
+        if (rating < 1 || rating > 5) {
+          return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+        }
+        contactRequest.rating = rating;
+        
+        // Update teacher rating
+        if (teacher && rating > 0) {
+          await teacher.updateRating(rating);
+        }
+      }
+      
+      if (feedback !== undefined) {
+        contactRequest.feedback = feedback;
+      }
+    }
+    
+    await contactRequest.save();
+    
+    // If status changed, create notification
+    if (req.body.status && req.body.status !== contactRequest.status) {
+      let notificationRecipient, notificationMessage, notificationType;
+      
+      // Determine recipient and message based on status
+      if (isTeacher) {
+        // If teacher updated, notify requester
+        notificationRecipient = contactRequest.requesterId;
+        notificationType = 'contact_response';
+        
+        switch (status) {
+          case 'accepted':
+            notificationMessage = `${teacher.name} has accepted your request to learn ${contactRequest.skill}. Session scheduled for ${new Date(contactRequest.sessionDate).toLocaleDateString()}.`;
+            break;
+          case 'declined':
+            notificationMessage = `${teacher.name} has declined your request to learn ${contactRequest.skill}.`;
+            break;
+          case 'completed':
+            notificationMessage = `${teacher.name} has marked your session for ${contactRequest.skill} as completed. Please provide feedback.`;
+            break;
+        }
+      } else if (isRequester && status === 'completed') {
+        // If requester marks as completed, notify teacher
+        const teacherUser = await User.findById(teacher.addedBy);
+        notificationRecipient = teacherUser._id;
+        notificationType = 'session_update';
+        notificationMessage = `${req.user.name} has marked the session for ${contactRequest.skill} as completed.`;
+      }
+      
+      // Create notification if we have a recipient and message
+      if (notificationRecipient && notificationMessage) {
+        await new Notification({
+          recipient: notificationRecipient,
+          sender: req.user._id,
+          title: `Contact Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+          message: notificationMessage,
+          type: notificationType,
+          relatedModel: 'ContactRequest',
+          relatedId: contactRequest._id,
+          link: `/skill-exchange/requests/${contactRequest._id}`
+        }).save();
+      }
+      
+      // If accepted, create a learning session
+      if (status === 'accepted' && contactRequest.sessionDate) {
+        const learningSession = new LearningSession({
+          teacherId: contactRequest.teacherId,
+          learnerId: contactRequest.requesterId,
+          contactRequestId: contactRequest._id,
+          skill: contactRequest.skill,
+          scheduledDate: contactRequest.sessionDate,
+          duration: contactRequest.sessionDuration || 60,
+          status: 'scheduled'
+        });
+        
+        await learningSession.save();
+      }
+    }
+    
+    res.json({
+      message: 'Contact request updated successfully',
+      contactRequest
+    });
+  } catch (error) {
+    console.error('Update contact request error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- LEARNING SESSION ROUTES ----------
+
+// Get all learning sessions
+router.get('/sessions', authenticateToken, async (req, res) => {
+  try {
+    const { status, limit = 20, page = 1 } = req.query;
+    
+    // Build query based on user role
+    let query = {};
+    
+    if (req.user.role === 'admin') {
+      // Admins can see all sessions
+      if (status) {
+        query.status = status;
+      }
+    } else {
+      // Regular users can only see their own sessions
+      // Either as learner or as the teacher
+      const userTeacherProfiles = await PeerTeacher.find({ addedBy: req.user._id });
+      const teacherIds = userTeacherProfiles.map(profile => profile._id);
+      
+      query = {
+        $or: [
+          { learnerId: req.user._id },
+          { teacherId: { $in: teacherIds } }
+        ]
+      };
+      
+      if (status) {
+        query.status = status;
+      }
+    }
+    
+    const sessions = await LearningSession.find(query)
+      .sort({ scheduledDate: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('teacherId', 'name')
+      .populate('learnerId', 'name email')
+      .populate('contactRequestId');
+      
+    const total = await LearningSession.countDocuments(query);
+    
+    res.json({
+      sessions,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: sessions.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get single session by ID
+router.get('/sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const session = await LearningSession.findById(req.params.id)
+      .populate('teacherId', 'name type skills')
+      .populate('learnerId', 'name email')
+      .populate('contactRequestId');
+      
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Check if user has permission to view this session
+    if (
+      req.user.role !== 'admin' && 
+      !session.learnerId._id.equals(req.user._id)
+    ) {
+      // Check if user is the teacher
+      const isTeacher = await PeerTeacher.exists({
+        _id: session.teacherId._id,
+        addedBy: req.user._id
+      });
+      
+      if (!isTeacher) {
+        return res.status(403).json({ message: 'Not authorized to view this session' });
+      }
+    }
+    
+    res.json(session);
+  } catch (error) {
+    console.error('Get session error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update learning session
+router.put('/sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      status,
+      meetingLink,
+      meetingPlatform,
+      notes,
+      learnerFeedback,
+      teacherFeedback,
+      learnerRating,
+      teacherRating,
+      resources,
+      learningOutcomes,
+      cancelReason
+    } = req.body;
+    
+    const session = await LearningSession.findById(id);
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Check permissions
+    const isLearner = session.learnerId.equals(req.user._id);
+    
+    // Check if user is the teacher
+    const teacher = await PeerTeacher.findById(session.teacherId);
+    const isTeacher = teacher && teacher.addedBy.equals(req.user._id);
+    
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isLearner && !isTeacher && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to update this session' });
+    }
+    
+    // Update fields based on role
+    if (status && ['scheduled', 'completed', 'cancelled', 'missed'].includes(status)) {
+      session.status = status;
+      
+      if (status === 'cancelled') {
+        session.cancelledBy = req.user._id;
+        if (cancelReason) {
+          session.cancelReason = cancelReason;
+        }
+      }
+    }
+    
+    // Both learner and teacher can update these
+    if (notes !== undefined) session.notes = notes;
+    
+    // Teacher-specific updates
+    if (isTeacher || isAdmin) {
+      if (meetingLink !== undefined) session.meetingLink = meetingLink;
+      if (meetingPlatform !== undefined) session.meetingPlatform = meetingPlatform;
+      if (teacherFeedback !== undefined) session.teacherFeedback = teacherFeedback;
+      if (learnerRating !== undefined && learnerRating >= 1 && learnerRating <= 5) {
+        session.learnerRating = learnerRating;
+      }
+      if (resources) session.resources = resources;
+      if (learningOutcomes) session.learningOutcomes = learningOutcomes;
+    }
+    
+    // Learner-specific updates
+    if (isLearner || isAdmin) {
+      if (learnerFeedback !== undefined) session.learnerFeedback = learnerFeedback;
+      if (teacherRating !== undefined && teacherRating >= 1 && teacherRating <= 5) {
+        session.teacherRating = teacherRating;
+        
+        // Update teacher's rating if provided
+        if (teacher && teacherRating > 0) {
+          await teacher.updateRating(teacherRating);
+        }
+      }
+    }
+    
+    await session.save();
+    
+    // Send notifications for status changes
+    if (req.body.status) {
+      let notificationRecipient, notificationSender, notificationMessage, notificationType;
+      
+      if (isTeacher) {
+        notificationRecipient = session.learnerId;
+        notificationSender = req.user._id;
+      } else if (isLearner) {
+        // Find teacher user
+        const teacherUser = await User.findById(teacher.addedBy);
+        notificationRecipient = teacherUser._id;
+        notificationSender = req.user._id;
+      }
+      
+      if (status === 'completed') {
+        notificationType = 'session_feedback';
+        notificationMessage = `Your learning session for ${session.skill} has been marked as completed. Please provide feedback.`;
+      } else if (status === 'cancelled') {
+        notificationType = 'session_cancelled';
+        notificationMessage = `Your learning session for ${session.skill} scheduled for ${new Date(session.scheduledDate).toLocaleDateString()} has been cancelled.`;
+      }
+      
+      if (notificationRecipient && notificationMessage) {
+        await new Notification({
+          recipient: notificationRecipient,
+          sender: notificationSender,
+          title: `Session ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+          message: notificationMessage,
+          type: notificationType,
+          relatedModel: 'LearningSession',
+          relatedId: session._id,
+          link: `/skill-exchange/sessions/${session._id}`
+        }).save();
+      }
+    }
+    
+    res.json({
+      message: 'Learning session updated successfully',
+      session
+    });
+  } catch (error) {
+    console.error('Update session error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- NOTIFICATION ROUTES ----------
+
+// Get user notifications
+router.get('/notifications', authenticateToken, async (req, res) => {
+  try {
+    const { isRead, limit = 20, page = 1 } = req.query;
+    
+    const query = { recipient: req.user._id };
+    if (isRead !== undefined) {
+      query.isRead = isRead === 'true';
+    }
+    
+    const notifications = await Notification.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('sender', 'name email');
+      
+    const total = await Notification.countDocuments(query);
+    const unreadCount = await Notification.countDocuments({ 
+      recipient: req.user._id, 
+      isRead: false 
+    });
+    
+    res.json({
+      notifications,
+      unreadCount,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: notifications.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Mark notification as read
+router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+    
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    
+    // Make sure this is the recipient
+    if (!notification.recipient.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized to update this notification' });
+    }
+    
+    notification.isRead = true;
+    notification.readAt = new Date();
+    await notification.save();
+    
+    res.json({
+      message: 'Notification marked as read',
+      notification
+    });
+  } catch (error) {
+    console.error('Mark notification as read error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Mark all notifications as read
+router.put('/notifications/read-all', authenticateToken, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipient: req.user._id, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+    
+    res.json({
+      message: 'All notifications marked as read'
+    });
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Delete notification
+router.delete('/notifications/:id', authenticateToken, async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+    
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    
+    // Make sure this is the recipient
+    if (!notification.recipient.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized to delete this notification' });
+    }
+    
+    await notification.deleteOne();
+    
+    res.json({
+      message: 'Notification deleted'
+    });
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- DASHBOARD METRICS ----------
+
+// Get skill exchange dashboard metrics
+router.get('/metrics', authenticateToken, async (req, res) => {
+  try {
+    const metrics = {};
+    
+    if (req.user.role === 'admin') {
+      // Admin metrics - system wide
+      metrics.totalTeachers = await PeerTeacher.countDocuments({ isActive: true });
+      metrics.totalPendingRequests = await ContactRequest.countDocuments({ status: 'pending' });
+      metrics.totalCompletedSessions = await ContactRequest.countDocuments({ status: 'completed' });
+      metrics.teachersByType = await PeerTeacher.aggregate([
+        { $match: { isActive: true } },
+        { $group: { _id: '$type', count: { $sum: 1 } } },
+        { $project: { type: '$_id', count: 1, _id: 0 } }
+      ]);
+      
+      // Top skills
+      metrics.topSkills = await ContactRequest.aggregate([
+        { $match: { status: 'completed' } },
+        { $group: { _id: '$skill', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        { $project: { skill: '$_id', count: 1, _id: 0 } }
+      ]);
+      
+      // Sessions by status
+      metrics.sessionsByStatus = await LearningSession.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $project: { status: '$_id', count: 1, _id: 0 } }
+      ]);
+      
+      // Average rating
+      const ratingData = await PeerTeacher.aggregate([
+        { $match: { rating: { $gt: 0 } } },
+        { $group: { _id: null, avgRating: { $avg: '$rating' } } }
+      ]);
+      
+      metrics.averageRating = ratingData.length > 0 ? ratingData[0].avgRating : 0;
+      
+    } else {
+      // User metrics - personal
+      
+      // Count teaching profiles
+      metrics.myTeacherProfiles = await PeerTeacher.countDocuments({ 
+        addedBy: req.user._id, 
+        isActive: true 
+      });
+      
+      // Get user's teacher IDs
+      const teacherProfiles = await PeerTeacher.find({ 
+        addedBy: req.user._id,
+        isActive: true
+      });
+      const teacherIds = teacherProfiles.map(t => t._id);
+      
+      // Requests I've received (as teacher)
+      metrics.requestsReceived = await ContactRequest.countDocuments({ 
+        teacherId: { $in: teacherIds } 
+      });
+      
+      metrics.pendingRequestsReceived = await ContactRequest.countDocuments({
+        teacherId: { $in: teacherIds },
+        status: 'pending'
+      });
+      
+      // Requests I've sent (as learner)
+      metrics.requestsSent = await ContactRequest.countDocuments({
+        requesterId: req.user._id
+      });
+      
+      metrics.pendingRequestsSent = await ContactRequest.countDocuments({
+        requesterId: req.user._id,
+        status: 'pending'
+      });
+      
+      // Sessions as teacher
+      metrics.teachingSessions = await LearningSession.countDocuments({
+        teacherId: { $in: teacherIds }
+      });
+      
+      // Sessions as learner
+      metrics.learningSessions = await LearningSession.countDocuments({
+        learnerId: req.user._id
+      });
+      
+      // Upcoming sessions (both roles)
+      metrics.upcomingSessions = await LearningSession.countDocuments({
+        $or: [
+          { teacherId: { $in: teacherIds } },
+          { learnerId: req.user._id }
+        ],
+        status: 'scheduled',
+        scheduledDate: { $gte: new Date() }
+      });
+      
+      // My personal ratings
+      if (teacherIds.length > 0) {
+        const ratings = teacherProfiles.map(t => t.rating).filter(r => r > 0);
+        metrics.myAverageRating = ratings.length > 0
+          ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+          : 0;
+      } else {
+        metrics.myAverageRating = 0;
+      }
+    }
+    
+    res.json(metrics);
+  } catch (error) {
+    console.error('Get metrics error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+module.exports = router;

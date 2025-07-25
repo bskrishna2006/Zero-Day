@@ -36,7 +36,11 @@ import {
   Coffee,
   Wifi,
   Battery,
-  Signal
+  Signal,
+  Code,
+  Palette,
+  Globe,
+  Music
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -266,6 +270,7 @@ export default function Dashboard() {
                   <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </Link>
               </Button>
+
               <Button asChild variant="outline" className="justify-start hover:bg-red-50 hover:border-red-300 transition-colors group">
                 <Link to="/complaints">
                   <MessageSquare className="mr-3 h-4 w-4 text-red-600 group-hover:scale-110 transition-transform" />
@@ -372,11 +377,13 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+
+
       {/* New: Campus Status Dashboard */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
+        transition={{ delay: 0.6 }}
       >
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>

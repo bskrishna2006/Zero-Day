@@ -260,27 +260,35 @@ function AddEntryDialog({ type, onSubmit, weekDays }) {
   ];
 
   const handleSubmit = () => {
-    const id = Date.now().toString(); // Simple unique ID
+    const id = Date.now().toString();
     if (!title || !day || !time) {
       toast({
         title: "Missing Fields",
         description: "Please fill all fields to add the entry.",
-        variant: "destructive", // Visual indication for an error toast
+        variant: "destructive",
       });
       return;
     }
+
     onSubmit({
       id,
-      [type === "class" ? "subject" : "title"]: title, // Conditionally set key
+      [type === "class" ? "subject" : "title"]: title,
       day,
       time,
-      ...(type === "task" ? { isCompleted: false } : {}), // Add isCompleted for tasks
+      ...(type === "task" ? { isCompleted: false } : {}),
     });
+
     toast({
-      title: `${type === "class" ? "Class" : "Task"} Added`,
-      description: `${title} on ${day} at ${time} has been added to your schedule.`,
+      title: type === "class" ? "Class Added" : "Task Added",
+      description:
+        title +
+        " on " +
+        day +
+        " at " +
+        time +
+        " has been added to your schedule.",
     });
-    // Clear form fields after submission for next entry
+
     setTitle("");
     setDay("");
     setTime("");

@@ -41,7 +41,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useLostFoundItems, useCreateLostFoundItem, useUpdateLostFoundItem } from "@/hooks/useLostFound";
+import { useLostFoundItems, useCreateLostFoundItem } from "@/hooks/useLostFound";
 
 interface LostFoundItem {
   _id: string;
@@ -61,7 +61,6 @@ interface LostFoundItem {
   contactPhone?: string;
   image?: string;
   status: 'active' | 'resolved' | 'expired';
-  resolvedAt?: string;
 }
 
 const categories = [
@@ -90,14 +89,12 @@ export default function LostFound() {
   const [category, setCategory] = useState("");
   const [type, setType] = useState<"lost" | "found">("lost");
   const [location, setLocation] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // Fetch data from API
   const { data: lostFoundData, isLoading, error, refetch } = useLostFoundItems();
   const createLostFoundMutation = useCreateLostFoundItem();
-  const updateItemMutation = useUpdateLostFoundItem();
   
   // Update items state when data is loaded
   useEffect(() => {
@@ -122,31 +119,6 @@ export default function LostFound() {
       top: 0,
       behavior: "smooth",
     });
-  };
-  
-  // Handle marking an item as resolved
-  const handleMarkResolved = async (itemId: string) => {
-    try {
-      await updateItemMutation.mutateAsync({
-        id: itemId,
-        data: {
-          status: 'resolved',
-          resolvedAt: new Date().toISOString()
-        }
-      });
-      
-      toast({
-        title: "Success",
-        description: "Item has been marked as resolved.",
-      });
-    } catch (error) {
-      console.error('Error marking item as resolved:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update item status. Please try again.",
-        variant: "destructive",
-      });
-    }
   };
 
   // Image upload functions
@@ -237,7 +209,7 @@ export default function LostFound() {
       type,
       location,
       contactEmail: user?.email || '',
-      contactPhone: contactPhone || null,
+      contactPhone: '',  // Could add a field for this if needed
       image: imageData,
     };
 
@@ -249,7 +221,6 @@ export default function LostFound() {
       setDescription("");
       setCategory("");
       setLocation("");
-      setContactPhone("");
       setSelectedImage(null);
       setImagePreview(null);
       setIsDialogOpen(false);
@@ -378,32 +349,6 @@ export default function LostFound() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="contactEmail">Contact Email</Label>
-                      <Input
-                        id="contactEmail"
-                        type="email"
-                        value={user?.email || ''}
-                        disabled={!!user}
-                        placeholder="Your email address"
-                      />
-                      {user && (
-                        <p className="text-xs text-muted-foreground">Using your account email</p>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="contactPhone">Contact Phone (Optional)</Label>
-                      <Input
-                        id="contactPhone"
-                        value={contactPhone}
-                        onChange={(e) => setContactPhone(e.target.value)}
-                        placeholder="Your phone number"
-                      />
-                    </div>
-                  </div>
-
                   <div className="space-y-2">
                     <Label>Image (Optional)</Label>
                     {imagePreview ? (
@@ -518,16 +463,9 @@ export default function LostFound() {
         ) : (
           filteredItems.map((item) => (
             <Card key={item._id} className="hover:shadow-md transition-shadow">
-              <CardHeader className={item.status === 'resolved' ? 'opacity-70' : ''}>
+              <CardHeader>
                 <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    {item.title}
-                    {item.status === 'resolved' && (
-                      <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
-                        Resolved
-                      </span>
-                    )}
-                  </CardTitle>
+                  <CardTitle className="text-lg">{item.title}</CardTitle>
                   <Badge
                     variant={item.type === "lost" ? "destructive" : "default"}
                   >
@@ -536,14 +474,14 @@ export default function LostFound() {
                 </div>
                 <div className="flex items-center justify-between">
                   <Badge variant="secondary">{item.category}</Badge>
-                  {item.status === 'expired' && (
-                    <Badge variant="secondary">
-                      Expired
+                  {item.status !== 'active' && (
+                    <Badge variant={item.status === 'resolved' ? 'outline' : 'secondary'}>
+                      {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                     </Badge>
                   )}
                 </div>
               </CardHeader>
-              <CardContent className={`space-y-3 ${item.status === 'resolved' ? 'opacity-70' : ''}`}>
+              <CardContent className="space-y-3">
                 {item.image && (
                   <div className="w-full h-48 overflow-hidden rounded-lg">
                     <img
@@ -567,84 +505,12 @@ export default function LostFound() {
                     <Calendar className="mr-1 h-3 w-3" />
                     {new Date(item.createdAt).toLocaleDateString()}
                   </div>
-                  {item.status === 'resolved' && item.resolvedAt && (
-                    <div className="flex items-center text-green-600">
-                      <Calendar className="mr-1 h-3 w-3" />
-                      Resolved on {new Date(item.resolvedAt).toLocaleDateString()}
-                    </div>
-                  )}
                   <div>Reported by: {item.reportedByName}</div>
                 </div>
 
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="w-full" disabled={item.status === 'resolved'}>
-                      {item.status === 'resolved' ? 'Resolved' : 'Contact Reporter'}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Contact Information</DialogTitle>
-                      <DialogDescription>
-                        Reach out to the person who reported this {item.type === "lost" ? "lost" : "found"} item.
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-medium">Item</h4>
-                        <p className="text-sm">{item.title}</p>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-medium">Reported by</h4>
-                        <p className="text-sm">{item.reportedByName}</p>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-medium">Email</h4>
-                        <p className="text-sm">
-                          <a 
-                            href={`mailto:${item.contactEmail}?subject=Regarding ${item.type === "lost" ? "lost" : "found"} item: ${item.title}`} 
-                            className="text-blue-600 hover:underline"
-                          >
-                            {item.contactEmail}
-                          </a>
-                        </p>
-                      </div>
-                      
-                      {item.contactPhone && (
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-medium">Phone</h4>
-                          <p className="text-sm">
-                            <a 
-                              href={`tel:${item.contactPhone}`}
-                              className="text-blue-600 hover:underline"
-                            >
-                              {item.contactPhone}
-                            </a>
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <DialogFooter className="flex-col space-y-2">
-                      {item.status === 'active' && user && (user._id === item.reportedBy._id || user.role === 'admin') && (
-                        <Button 
-                          type="button" 
-                          variant="default" 
-                          className="w-full"
-                          onClick={() => handleMarkResolved(item._id)}
-                        >
-                          Mark as Resolved
-                        </Button>
-                      )}
-                      <Button type="button" variant="secondary" className="w-full">
-                        Close
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <Button size="sm" className="w-full">
+                  Contact Reporter
+                </Button>
               </CardContent>
             </Card>
           ))

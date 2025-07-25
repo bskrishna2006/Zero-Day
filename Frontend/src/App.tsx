@@ -9,10 +9,11 @@ import { Navigation } from "./components/layout/Navigation";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
-import Announcements from "./pages/Announcements";
+import Announcements from "./pages/AnnouncementsNew";
 import LostFound from "./pages/LostFound";
 import Timetable from "./pages/Timetable";
 import Complaints from "./pages/Complaints";
+import SkillExchange from "./pages/SkillExchange";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,7 +42,9 @@ const AppContent = () => {
         <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
         <Route path="/lost-found" element={<ProtectedRoute><LostFound /></ProtectedRoute>} />
         <Route path="/timetable" element={<ProtectedRoute><Timetable /></ProtectedRoute>} />
+        <Route path="/skill-exchange" element={<ProtectedRoute><SkillExchange /></ProtectedRoute>} />
         <Route path="/complaints" element={<ProtectedRoute><Complaints /></ProtectedRoute>} />
+
         <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
