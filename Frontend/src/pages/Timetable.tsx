@@ -1,387 +1,332 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, Plus, Edit, Trash2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { toast } from "@/components/ui/use-toast"; // Assuming this is imported and configured
+import { Menu, CalendarDays, ListChecks } from "lucide-react";
 
-interface ClassSchedule {
-  id: string;
-  subject: string;
-  day: string;
-  startTime: string;
-  endTime: string;
-  location?: string;
-  color: string;
+// Helper function to get the current week's days and dates
+function getCurrentWeek() {
+  const today = new Date();
+  const week = [];
+  const dayIndex = today.getDay(); // Sunday = 0, Monday = 1, etc.
+
+  for (let i = 1; i <= 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - dayIndex + i); // Adjust to get Mon-Sun
+    week.push({
+      day: date.toLocaleDateString("en-US", { weekday: "long" }),
+      date: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    });
+  }
+  return week;
 }
 
-const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-const timeSlots = [
-  '8:00', '9:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'
-];
-const colors = [
-  'bg-blue-100 border-blue-300 text-blue-800',
-  'bg-green-100 border-green-300 text-green-800',
-  'bg-purple-100 border-purple-300 text-purple-800',
-  'bg-orange-100 border-orange-300 text-orange-800',
-  'bg-pink-100 border-pink-300 text-pink-800',
-  'bg-indigo-100 border-indigo-300 text-indigo-800',
-];
+export default function TimetableWithTasks() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [schedule, setSchedule] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [weekDays, setWeekDays] = useState([]);
+  const [currentDate, setCurrentDate] = useState(""); // State to hold current date
 
-export default function Timetable() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [schedule, setSchedule] = useState<ClassSchedule[]>([]);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingClass, setEditingClass] = useState<ClassSchedule | null>(null);
-  
-  // Form state
-  const [subject, setSubject] = useState('');
-  const [day, setDay] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [location, setLocation] = useState('');
-
-  // Mock data
+  // Initialize weekDays and current date on component mount
   useEffect(() => {
-    const mockSchedule: ClassSchedule[] = [
-      {
-        id: '1',
-        subject: 'Advanced Mathematics',
-        day: 'Monday',
-        startTime: '9:00',
-        endTime: '10:30',
-        location: 'Room A-101',
-        color: colors[0]
-      },
-      {
-        id: '2',
-        subject: 'Physics Lab',
-        day: 'Tuesday',
-        startTime: '14:00',
-        endTime: '16:00',
-        location: 'Physics Lab 1',
-        color: colors[1]
-      },
-      {
-        id: '3',
-        subject: 'Computer Science',
-        day: 'Wednesday',
-        startTime: '10:00',
-        endTime: '11:30',
-        location: 'Computer Lab',
-        color: colors[2]
-      }
-    ];
-    setSchedule(mockSchedule);
+    setWeekDays(getCurrentWeek());
+    const today = new Date();
+    setCurrentDate(
+      today.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    );
   }, []);
 
-  const resetForm = () => {
-    setSubject('');
-    setDay('');
-    setStartTime('');
-    setEndTime('');
-    setLocation('');
-    setEditingClass(null);
+  // Functions to manage schedule entries and tasks
+  const addScheduleEntry = (entry) => {
+    setSchedule((prev) => [...prev, entry]);
+    // Note: To automatically close the dialog after adding,
+    // you would typically control the Dialog's open prop with a state
+    // in TimetableWithTasks and update it here. For simplicity,
+    // we rely on the user manually closing it after the toast appears.
   };
 
-  const handleAddClass = () => {
-    if (!subject || !day || !startTime || !endTime) {
+  const addTask = (task) => {
+    setTasks((prev) => [...prev, task]);
+  };
+
+  const markTaskDone = (taskId) =>
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, isCompleted: true } : t))
+    );
+
+  // Define standard times for the timetable
+  const times = [
+    "8:00",
+    "9:00",
+    "10:00",
+    "11:00",
+    "12:00",
+    "13:00",
+    "14:00",
+    "15:00",
+    "16:00",
+    "17:00",
+  ];
+
+  return (
+    <div className="relative min-h-screen bg-white">
+      {/* Overlay for all screen sizes when sidebar is open, allows clicking outside to close */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black bg-opacity-25"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div
+        className={`fixed top-0 left-0 h-full w-64 p-4 shadow-xl z-50 transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        `}
+        style={{ backgroundColor: "#e0f7fa" }} // A light, calming blue for the sidebar
+      >
+        {/* Menu content now wrapped in a Card for box format */}
+        <Card className="h-full flex flex-col">
+          <CardHeader>
+            <CardTitle>Menu</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 space-y-2">
+            <Button variant="ghost" className="w-full justify-start">
+              <CalendarDays className="mr-2 h-4 w-4" /> Weekly Timetable
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <ListChecks className="mr-2 h-4 w-4" /> Monthly Schedule
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <ListChecks className="mr-2 h-4 w-4" /> Tasks
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="min-h-screen w-full">
+        <header className="flex justify-between items-center p-4 shadow bg-white">
+          {/* Menu button is always visible and controls sidebar state */}
+          <Button variant="ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <Menu className="h-6 w-6" />
+          </Button>
+          <h1 className="text-xl font-bold">
+            Student Scheduler{" "}
+            <span className="text-sm text-gray-500 ml-2">{currentDate}</span>
+          </h1>
+        </header>
+
+        {/* Timetable Grid Section */}
+        <div className="p-4 overflow-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle>Weekly Timetable</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-8 gap-2 min-w-max">
+                {/* Time Column Header with light green background and rounded corners */}
+                <div className="py-2 bg-lime-100 text-center font-bold rounded-md">
+                  Time
+                </div>
+                {/* Day headers with light green background and rounded corners (Days as Columns) */}
+                {weekDays.map(({ day, date }) => (
+                  <div
+                    key={day}
+                    className="py-2 bg-lime-100 font-bold text-center rounded-md"
+                  >
+                    {day}
+                    <br />
+                    <span className="text-sm text-gray-500">{date}</span>
+                  </div>
+                ))}
+                {/* Time row headers and daily slots */}
+                {times.map((time) => (
+                  <React.Fragment key={time}>
+                    {/* Time cell with light green background and rounded corners (Times as Rows) */}
+                    <div className="py-2 bg-lime-100 font-bold text-center rounded-md">
+                      {time}
+                    </div>
+                    {/* Individual day slots with rounded corners */}
+                    {weekDays.map(({ day }) => {
+                      const entry = schedule.find(
+                        (s) => s.day === day && s.time === time
+                      );
+                      const task = tasks.find(
+                        (t) =>
+                          t.day === day && t.time === time && !t.isCompleted
+                      );
+                      return (
+                        <div
+                          key={day + time}
+                          className="border p-2 min-h-[60px] relative rounded-md"
+                        >
+                          {entry && (
+                            <div className="text-sm font-medium">
+                              📘 {entry.subject}
+                            </div>
+                          )}
+                          {task && (
+                            <div className="text-xs mt-1">
+                              ✅ {task.title}
+                              <Button
+                                size="sm"
+                                className="mt-1 w-full"
+                                onClick={() => markTaskDone(task.id)}
+                              >
+                                Mark Done
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Add Class Dialog */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button className="mt-4">Add Class</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <AddEntryDialog
+                type="class"
+                onSubmit={addScheduleEntry}
+                weekDays={weekDays}
+              />
+            </DialogContent>
+          </Dialog>
+
+          {/* Add Task Dialog */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="mt-4 ml-2">
+                Add Task
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <AddEntryDialog
+                type="task"
+                onSubmit={addTask}
+                weekDays={weekDays}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Reusable dialog for adding either a class or a task
+// Defined within the same file for easier single-file usage
+function AddEntryDialog({ type, onSubmit, weekDays }) {
+  const [title, setTitle] = useState("");
+  const [day, setDay] = useState("");
+  const [time, setTime] = useState("");
+
+  const times = [
+    "8:00",
+    "9:00",
+    "10:00",
+    "11:00",
+    "12:00",
+    "13:00",
+    "14:00",
+    "15:00",
+    "16:00",
+    "17:00",
+  ];
+
+  const handleSubmit = () => {
+    const id = Date.now().toString(); // Simple unique ID
+    if (!title || !day || !time) {
       toast({
-        title: "Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
+        title: "Missing Fields",
+        description: "Please fill all fields to add the entry.",
+        variant: "destructive", // Visual indication for an error toast
       });
       return;
     }
-
-    const classData: ClassSchedule = {
-      id: editingClass ? editingClass.id : Date.now().toString(),
-      subject,
+    onSubmit({
+      id,
+      [type === "class" ? "subject" : "title"]: title, // Conditionally set key
       day,
-      startTime,
-      endTime,
-      location,
-      color: editingClass ? editingClass.color : colors[schedule.length % colors.length]
-    };
-
-    if (editingClass) {
-      setSchedule(prev => prev.map(cls => cls.id === editingClass.id ? classData : cls));
-      toast({
-        title: "Success",
-        description: "Class updated successfully.",
-      });
-    } else {
-      setSchedule(prev => [...prev, classData]);
-      toast({
-        title: "Success",
-        description: "Class added successfully.",
-      });
-    }
-
-    resetForm();
-    setIsDialogOpen(false);
-  };
-
-  const handleEditClass = (classItem: ClassSchedule) => {
-    setEditingClass(classItem);
-    setSubject(classItem.subject);
-    setDay(classItem.day);
-    setStartTime(classItem.startTime);
-    setEndTime(classItem.endTime);
-    setLocation(classItem.location || '');
-    setIsDialogOpen(true);
-  };
-
-  const handleDeleteClass = (classId: string) => {
-    setSchedule(prev => prev.filter(cls => cls.id !== classId));
+      time,
+      ...(type === "task" ? { isCompleted: false } : {}), // Add isCompleted for tasks
+    });
     toast({
-      title: "Success",
-      description: "Class deleted successfully.",
+      title: `${type === "class" ? "Class" : "Task"} Added`,
+      description: `${title} on ${day} at ${time} has been added to your schedule.`,
     });
-  };
-
-  const getClassesForDayAndTime = (day: string, time: string) => {
-    return schedule.filter(cls => {
-      const classStartHour = parseInt(cls.startTime.split(':')[0]);
-      const classEndHour = parseInt(cls.endTime.split(':')[0]);
-      const currentHour = parseInt(time.split(':')[0]);
-      
-      return cls.day === day && currentHour >= classStartHour && currentHour < classEndHour;
-    });
+    // Clear form fields after submission for next entry
+    setTitle("");
+    setDay("");
+    setTime("");
   };
 
   return (
-    <div className="container py-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Timetable</h1>
-          <p className="text-muted-foreground">Manage your weekly class schedule</p>
-        </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Class
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                {editingClass ? 'Edit Class' : 'Add New Class'}
-              </DialogTitle>
-              <DialogDescription>
-                {editingClass ? 'Update class details.' : 'Add a new class to your schedule.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="subject">Subject</Label>
-                <Input
-                  id="subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Enter subject name"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="day">Day</Label>
-                <Select value={day} onValueChange={setDay}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select day" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {days.map((d) => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="startTime">Start Time</Label>
-                  <Select value={startTime} onValueChange={setStartTime}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Start" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map((time) => (
-                        <SelectItem key={time} value={time}>{time}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="endTime">End Time</Label>
-                  <Select value={endTime} onValueChange={setEndTime}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="End" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map((time) => (
-                        <SelectItem key={time} value={time}>{time}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="location">Location (Optional)</Label>
-                <Input
-                  id="location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Enter classroom or location"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddClass}>
-                {editingClass ? 'Update Class' : 'Add Class'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Schedule Grid */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Calendar className="mr-2 h-5 w-5" />
-            Weekly Schedule
-          </CardTitle>
-          <CardDescription>
-            Your classes for the week
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <div className="grid grid-cols-6 gap-2 min-w-[800px]">
-              {/* Header */}
-              <div className="font-semibold text-center p-3 bg-muted rounded-lg">Time</div>
-              {days.map(day => (
-                <div key={day} className="font-semibold text-center p-3 bg-muted rounded-lg">
-                  {day}
-                </div>
-              ))}
-              
-              {/* Time slots */}
-              {timeSlots.map(time => (
-                <React.Fragment key={time}>
-                  <div className="text-center p-3 border-r text-sm font-medium">
-                    {time}
-                  </div>
-                  {days.map(day => {
-                    const classes = getClassesForDayAndTime(day, time);
-                    return (
-                      <div key={`${day}-${time}`} className="p-1 min-h-[60px]">
-                        {classes.map(cls => (
-                          <div
-                            key={cls.id}
-                            className={`p-2 rounded-lg border-2 text-xs relative group ${cls.color}`}
-                          >
-                            <div className="font-medium">{cls.subject}</div>
-                            <div className="flex items-center text-xs mt-1">
-                              <Clock className="mr-1 h-3 w-3" />
-                              {cls.startTime}-{cls.endTime}
-                            </div>
-                            {cls.location && (
-                              <div className="text-xs">{cls.location}</div>
-                            )}
-                            
-                            {/* Edit/Delete buttons */}
-                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <div className="flex space-x-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleEditClass(cls)}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleDeleteClass(cls.id)}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Schedule Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Schedule Summary</CardTitle>
-          <CardDescription>
-            Overview of your classes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3">
-            {schedule.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                No classes scheduled. Add your first class to get started.
-              </p>
-            ) : (
-              schedule.map(cls => (
-                <div key={cls.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Badge className={cls.color}>{cls.subject}</Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {cls.day} • {cls.startTime}-{cls.endTime}
-                      {cls.location && ` • ${cls.location}`}
-                    </span>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleEditClass(cls)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDeleteClass(cls.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-4 p-4">
+      <h3 className="text-lg font-semibold">
+        Add New {type === "class" ? "Class" : "Task"}
+      </h3>
+      <Input
+        placeholder={
+          type === "class"
+            ? "Subject Name (e.g., Math)"
+            : "Task Title (e.g., Complete Homework)"
+        }
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <Select onValueChange={setDay} value={day}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select Day" />
+        </SelectTrigger>
+        <SelectContent>
+          {weekDays.map(({ day }) => (
+            <SelectItem key={day} value={day}>
+              {day}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select onValueChange={setTime} value={time}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select Time" />
+        </SelectTrigger>
+        <SelectContent>
+          {times.map((time) => (
+            <SelectItem key={time} value={time}>
+              {time}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button onClick={handleSubmit} className="w-full">
+        Add {type === "class" ? "Class" : "Task"}
+      </Button>
     </div>
   );
 }
