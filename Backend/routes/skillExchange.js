@@ -263,13 +263,41 @@ router.get('/requests', authenticateToken, async (req, res) => {
       limit = 20, 
       page = 1,
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      role = 'student' // can be 'student' or 'teacher' to filter requests
     } = req.query;
     
     let query = {};
     
-    // Students see requests they made, admins see all
-    if (req.user.role !== 'admin') {
+    // Admin sees all requests
+    if (req.user.role === 'admin') {
+      // No filtering needed - can see everything
+    } 
+    // For students, show requests they made
+    else if (role === 'student') {
+      query.requesterId = req.user._id;
+    } 
+    else if (role === 'teacher') {
+      // Find all teacher profiles owned by this user
+      const teacherProfiles = await PeerTeacher.find({ addedBy: req.user._id }).select('_id');
+      const teacherIds = teacherProfiles.map(profile => profile._id);
+      
+      if (teacherIds.length === 0) {
+        // No teacher profiles found, return empty result
+        return res.json({
+          requests: [],
+          pagination: {
+            current: parseInt(page),
+            total: 0,
+            count: 0,
+            totalCount: 0
+          }
+        });
+      }
+      query.teacherId = { $in: teacherIds };
+    }
+    else {
+      // Default to student view
       query.requesterId = req.user._id;
     }
     
@@ -304,6 +332,93 @@ router.get('/requests', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Get contact requests error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get a specific contact request by ID
+router.get('/requests/:id', authenticateToken, async (req, res) => {
+  try {
+    const request = await ContactRequest.findById(req.params.id)
+      .populate('teacherId', 'name email skills type availability linkedinUrl bio')
+      .populate('requesterId', 'name email');
+      
+    if (!request) {
+      return res.status(404).json({ message: 'Contact request not found' });
+    }
+    
+    // Check permissions - only allow if user is admin, requester, or teacher
+    const isRequester = request.requesterId && 
+      request.requesterId._id.toString() === req.user._id.toString();
+    
+    const isTeacher = request.teacherId && await PeerTeacher.exists({ 
+      _id: request.teacherId._id, 
+      addedBy: req.user._id 
+    });
+    
+    if (!isRequester && !isTeacher && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    res.json({ request });
+  } catch (error) {
+    console.error('Get contact request error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get requests for a specific teacher profile
+router.get('/teachers/:teacherId/requests', authenticateToken, async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { 
+      status, 
+      limit = 20, 
+      page = 1,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+    
+    // Verify teacher exists
+    const teacher = await PeerTeacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ message: 'Peer teacher not found' });
+    }
+    
+    // Check permissions - only allow if user is admin or owns the teacher profile
+    const isOwner = teacher.addedBy && teacher.addedBy.toString() === req.user._id.toString();
+    if (req.user.role !== 'admin' && !isOwner) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    const query = { teacherId: teacherId };
+    
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    
+    const requests = await ContactRequest.find(query)
+      .sort(sortOptions)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('requesterId', 'name email');
+      
+    const total = await ContactRequest.countDocuments(query);
+
+    res.json({
+      requests,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: requests.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get teacher requests error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -353,7 +468,24 @@ router.post('/requests', authenticateToken, async (req, res) => {
     });
 
     await request.save();
-    await request.populate('teacherId', 'name email skills type');
+    await request.populate('teacherId', 'name email skills type addedBy');
+
+    // Create notification for the teacher/teacher owner
+    if (request.teacherId && request.teacherId.addedBy) {
+      const notification = new Notification({
+        recipient: request.teacherId.addedBy,
+        sender: req.user._id,
+        title: 'New Learning Request',
+        message: `${requesterName} has requested to learn ${skill} with you. Please review and respond to this request.`,
+        type: 'contact_request',
+        relatedModel: 'ContactRequest',
+        relatedId: request._id,
+        priority: 'normal',
+        link: `/skill-exchange/teacher/requests/${request._id}`
+      });
+      
+      await notification.save();
+    }
 
     res.status(201).json({
       message: 'Contact request sent successfully',
@@ -368,10 +500,11 @@ router.post('/requests', authenticateToken, async (req, res) => {
 // Update contact request status (by teacher or admin)
 router.patch('/requests/:id/status', authenticateToken, async (req, res) => {
   try {
-    const { status, responseMessage, sessionDate } = req.body;
+    const { status, responseMessage, sessionDate, sessionDuration } = req.body;
 
     const request = await ContactRequest.findById(req.params.id)
-      .populate('teacherId', 'addedBy');
+      .populate('teacherId', 'addedBy name')
+      .populate('requesterId', 'name email');
 
     if (!request) {
       return res.status(404).json({ message: 'Contact request not found' });
@@ -379,7 +512,7 @@ router.patch('/requests/:id/status', authenticateToken, async (req, res) => {
 
     // Check if user can update status (teacher who owns the profile or admin)
     const canUpdate = req.user.role === 'admin' || 
-                     request.teacherId.addedBy.toString() === req.user._id.toString();
+                     request.teacherId.addedBy?.toString() === req.user._id.toString();
 
     if (!canUpdate) {
       return res.status(403).json({ message: 'Access denied' });
@@ -390,12 +523,114 @@ router.patch('/requests/:id/status', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
+    // Validate session date when accepting
+    if (status === 'accepted') {
+      if (!sessionDate) {
+        return res.status(400).json({ message: 'Session date is required when accepting a request' });
+      }
+      const proposedDate = new Date(sessionDate);
+      if (isNaN(proposedDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid session date format' });
+      }
+      
+      // Ensure session date is in the future
+      if (proposedDate < new Date()) {
+        return res.status(400).json({ message: 'Session date must be in the future' });
+      }
+    }
+
     request.status = status;
     if (responseMessage) request.responseMessage = responseMessage;
     if (sessionDate) request.sessionDate = new Date(sessionDate);
+    if (sessionDuration) request.sessionDuration = sessionDuration;
 
     await request.save();
-    await request.populate('teacherId', 'name email skills type');
+    
+    // Create notification for the requester
+    if (request.requesterId) {
+      const notificationTitle = status === 'accepted' 
+        ? 'Your learning request was accepted!'
+        : status === 'declined'
+        ? 'Your learning request was declined'
+        : 'Your learning request was updated';
+        
+      const notificationMessage = status === 'accepted' 
+        ? `${request.teacherName} has accepted your request to learn ${request.skill}. Your session is scheduled for ${new Date(request.sessionDate).toLocaleString()}.`
+        : status === 'declined'
+        ? `${request.teacherName} has declined your request to learn ${request.skill}.${request.responseMessage ? ' Message: ' + request.responseMessage : ''}`
+        : `The status of your request to learn ${request.skill} with ${request.teacherName} has been updated to ${status}.`;
+      
+      const notification = new Notification({
+        recipient: request.requesterId,
+        sender: req.user._id,
+        title: notificationTitle,
+        message: notificationMessage,
+        type: 'contact_response',
+        relatedModel: 'ContactRequest',
+        relatedId: request._id,
+        priority: status === 'accepted' ? 'high' : 'normal',
+        link: `/skill-exchange/requests/${request._id}`
+      });
+      
+      await notification.save();
+    }
+    
+    // If accepted, create a learning session
+    if (status === 'accepted') {
+      // Check if a learning session already exists
+      const existingSession = await LearningSession.findOne({ contactRequestId: request._id });
+      
+      if (!existingSession) {
+        const learningSession = new LearningSession({
+          teacherId: request.teacherId._id,
+          learnerId: request.requesterId,
+          contactRequestId: request._id,
+          skill: request.skill,
+          scheduledDate: request.sessionDate || new Date(Date.now() + 24 * 60 * 60 * 1000), // Default to tomorrow if no date
+          duration: request.sessionDuration || 60,
+          status: 'scheduled',
+          notes: [{
+            content: `Session scheduled based on request: ${request.message}`,
+            addedBy: req.user._id,
+            addedAt: new Date()
+          }],
+          meetingLink: request.meetingLink || '',
+          meetingPlatform: request.meetingPlatform || 'other',
+          location: request.location || 'To be determined'
+        });
+        
+        await learningSession.save();
+        
+        // Create notifications for both parties about the new session
+        await Notification.createSessionNotification(
+          request.requesterId,
+          req.user._id,
+          learningSession._id,
+          'session_scheduled',
+          'Learning session scheduled',
+          `Your learning session with ${teacher.name} has been scheduled`,
+          { scheduledDate: learningSession.scheduledDate }
+        );
+        
+        // Send notification to teacher as well (if not the current user)
+        if (teacher.addedBy && teacher.addedBy.toString() !== req.user._id.toString()) {
+          await Notification.createSessionNotification(
+            teacher.addedBy,
+            req.user._id,
+            learningSession._id,
+            'session_scheduled',
+            'Learning session scheduled',
+            `A learning session has been scheduled with ${requesterName}`,
+            { scheduledDate: learningSession.scheduledDate }
+          );
+        }
+      }
+    }
+
+    await request.populate([
+      { path: 'teacherId', select: 'name email skills type' },
+      { path: 'requesterId', select: 'name email' }
+    ]);
 
     res.json({
       message: 'Request status updated successfully',
@@ -502,6 +737,481 @@ router.get('/admin/stats', authenticateToken, requireAdmin, async (req, res) => 
     });
   } catch (error) {
     console.error('Get skill exchange stats error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get skill exchange notifications for the logged-in user
+router.get('/notifications', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      isRead = false, 
+      limit = 20, 
+      page = 1,
+      type
+    } = req.query;
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Build the query to find notifications related to skill exchange
+    const query = { 
+      recipient: req.user._id,
+      $or: [
+        { type: 'contact_request' },
+        { type: 'contact_response' },
+        { type: 'session_request' },
+        { type: 'session_update' },
+        { type: 'session_reminder' },
+        { type: 'session_feedback' }
+      ]
+    };
+    
+    if (isRead !== 'all') {
+      query.isRead = isRead === 'true';
+    }
+    
+    if (type) {
+      // If specific notification type is requested
+      query.type = type;
+    }
+    
+    const notifications = await Notification.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('sender', 'name email')
+      .populate('recipient', 'name email');
+      
+    const total = await Notification.countDocuments(query);
+    
+    res.json({
+      notifications,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        count: notifications.length,
+        totalCount: total
+      }
+    });
+  } catch (error) {
+    console.error('Get skill exchange notifications error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Mark a notification as read
+router.patch('/notifications/:id/read', authenticateToken, async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+    
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    
+    // Check if this notification belongs to the user
+    if (notification.recipient.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    notification.isRead = true;
+    notification.readAt = new Date();
+    await notification.save();
+    
+    res.json({ 
+      message: 'Notification marked as read',
+      notification 
+    });
+  } catch (error) {
+    console.error('Mark notification read error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get learning sessions for a specific contact request
+router.get('/requests/:requestId/sessions', authenticateToken, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    
+    // Verify request exists
+    const request = await ContactRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ message: 'Contact request not found' });
+    }
+    
+    // Check permissions
+    const isTeacher = (await PeerTeacher.exists({ 
+      _id: request.teacherId, 
+      addedBy: req.user._id 
+    }));
+    
+    const isRequester = request.requesterId && 
+      request.requesterId.toString() === req.user._id.toString();
+    
+    if (!isRequester && !isTeacher && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    const sessions = await LearningSession.find({ contactRequestId: requestId })
+      .populate('teacherId', 'name email skills type')
+      .populate('learnerId', 'name email')
+      .sort({ scheduledDate: -1 });
+    
+    res.json({ sessions });
+  } catch (error) {
+    console.error('Get learning sessions error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get all learning sessions for the current user
+router.get('/learning-sessions', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { status, page = 1, limit = 10, sortBy = 'scheduledDate', sortOrder = 'desc' } = req.query;
+    
+    const query = {
+      $or: [
+        { teacherId: userId },
+        { learnerId: userId }
+      ]
+    };
+    
+    // Filter by status if provided
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    
+    const sessions = await LearningSession.find(query)
+      .sort(sortOptions)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .populate('teacherId', 'name email skills type')
+      .populate('learnerId', 'name email')
+      .populate('contactRequestId');
+    
+    const total = await LearningSession.countDocuments(query);
+    
+    res.json({ 
+      sessions,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching learning sessions:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get a specific learning session by ID
+router.get('/learning-sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const session = await LearningSession.findById(req.params.id)
+      .populate('teacherId', 'name email skills type')
+      .populate('learnerId', 'name email')
+      .populate('contactRequestId');
+    
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Check permissions - only allow access to participants or admin
+    const isParticipant = 
+      session.teacherId._id.toString() === req.user._id.toString() || 
+      session.learnerId._id.toString() === req.user._id.toString();
+    
+    if (!isParticipant && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    res.json({ session });
+  } catch (error) {
+    console.error('Error fetching learning session:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update learning session status
+router.put('/learning-sessions/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    const userId = req.user._id;
+    const sessionId = req.params.id;
+    
+    if (!['scheduled', 'completed', 'cancelled', 'rescheduled'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid session status' });
+    }
+    
+    const session = await LearningSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Only teacher or student in the session can update its status
+    if (session.teacherId.toString() !== userId.toString() && 
+        session.learnerId.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // Update session status
+    session.status = status;
+    
+    // Add notes if provided
+    if (notes) {
+      session.notes = session.notes || [];
+      session.notes.push({
+        content: notes,
+        addedBy: userId,
+        addedAt: new Date()
+      });
+    }
+    
+    await session.save();
+    
+    // Create notifications for both parties
+    const isTeacher = session.teacherId.toString() === userId.toString();
+    const notifyUserId = isTeacher ? session.learnerId : session.teacherId;
+    const userName = req.user.name;
+    
+    // Create a notification for the other party
+    await new Notification({
+      userId: notifyUserId,
+      title: `Learning session ${status}`,
+      message: `${userName} has marked your learning session as ${status}${notes ? ' with additional notes' : ''}`,
+      type: 'learning_session_update',
+      relatedModel: 'LearningSession',
+      relatedId: session._id,
+      data: {
+        sessionId: session._id,
+        status
+      }
+    }).save();
+    
+    res.json({ 
+      message: 'Learning session status updated successfully',
+      session
+    });
+    
+  } catch (error) {
+    console.error('Error updating learning session status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update learning session details (time, location, etc.)
+router.put('/learning-sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const { scheduledDate, duration, location, notes, meetingLink, meetingPlatform } = req.body;
+    const userId = req.user._id;
+    const sessionId = req.params.id;
+    
+    const session = await LearningSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Only teacher or student in the session can update it
+    if (session.teacherId.toString() !== userId.toString() && 
+        session.learnerId.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // Update session details
+    if (scheduledDate) session.scheduledDate = new Date(scheduledDate);
+    if (duration) session.duration = duration;
+    if (location) session.location = location;
+    if (meetingLink) session.meetingLink = meetingLink;
+    if (meetingPlatform) session.meetingPlatform = meetingPlatform;
+    
+    // Add notes if provided
+    if (notes) {
+      session.notes = session.notes || [];
+      session.notes.push({
+        content: notes,
+        addedBy: userId,
+        addedAt: new Date()
+      });
+    }
+    
+    // If rescheduled, update status
+    if (scheduledDate && session.status !== 'rescheduled') {
+      session.status = 'rescheduled';
+    }
+    
+    await session.save();
+    
+    // Create notifications for both parties
+    const isTeacher = session.teacherId.toString() === userId.toString();
+    const notifyUserId = isTeacher ? session.learnerId : session.teacherId;
+    const userName = req.user.name;
+    
+    // Create a notification for the other party
+    await Notification.createSessionNotification(
+      notifyUserId,
+      userId,
+      session._id,
+      'session_update',
+      'Learning session updated',
+      `${userName} has updated your learning session details`,
+      {
+        updates: {
+          scheduledDate: scheduledDate ? true : false,
+          duration: duration ? true : false,
+          location: location ? true : false,
+          notes: notes ? true : false,
+          meetingLink: meetingLink ? true : false,
+          meetingPlatform: meetingPlatform ? true : false
+        }
+      }
+    );
+    
+    res.json({ 
+      message: 'Learning session updated successfully',
+      session
+    });
+    
+  } catch (error) {
+    console.error('Error updating learning session:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Submit feedback for a learning session
+router.post('/learning-sessions/:id/feedback', authenticateToken, async (req, res) => {
+  try {
+    const { rating, feedback } = req.body;
+    const userId = req.user._id;
+    const sessionId = req.params.id;
+    
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+    }
+    
+    const session = await LearningSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Learning session not found' });
+    }
+    
+    // Verify this user is part of the session
+    const isTeacher = session.teacherId.toString() === userId.toString();
+    const isLearner = session.learnerId.toString() === userId.toString();
+    
+    if (!isTeacher && !isLearner) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // Update the appropriate feedback field
+    if (isLearner) {
+      session.learnerRating = rating;
+      session.learnerFeedback = feedback || session.learnerFeedback;
+    } else {
+      session.teacherRating = rating;
+      session.teacherFeedback = feedback || session.teacherFeedback;
+    }
+    
+    // Add a note about the feedback
+    session.notes = session.notes || [];
+    session.notes.push({
+      content: `${isLearner ? 'Learner' : 'Teacher'} submitted feedback: ${rating}/5 stars${feedback ? ` - ${feedback}` : ''}`,
+      addedBy: userId,
+      addedAt: new Date()
+    });
+    
+    await session.save();
+    
+    // Notify the other party about the feedback
+    const notifyUserId = isLearner ? session.teacherId : session.learnerId;
+    const userName = req.user.name;
+    
+    await Notification.createSessionNotification(
+      notifyUserId,
+      userId,
+      session._id,
+      'session_feedback',
+      'New session feedback received',
+      `${userName} has provided feedback on your learning session`,
+      { rating }
+    );
+    
+    res.json({
+      message: 'Feedback submitted successfully',
+      session
+    });
+    
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get dashboard data for skill exchange
+router.get('/dashboard', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // Get upcoming learning sessions
+    const upcomingSessions = await LearningSession.findUpcomingForUser(userId, { limit: 5 });
+    
+    // Get pending requests (as teacher or student)
+    const pendingRequests = await ContactRequest.find({
+      $or: [
+        { requesterId: userId, status: 'pending' },
+        { teacherId: { $in: await PeerTeacher.find({ addedBy: userId }).distinct('_id') }, status: 'pending' }
+      ]
+    })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .populate('teacherId', 'name email skills type')
+    .populate('requesterId', 'name email');
+    
+    // Get recent completed sessions
+    const recentCompletedSessions = await LearningSession.find({
+      $or: [
+        { teacherId: userId },
+        { learnerId: userId }
+      ],
+      status: 'completed',
+    })
+    .sort({ completedAt: -1 })
+    .limit(5)
+    .populate('teacherId', 'name email skills')
+    .populate('learnerId', 'name email');
+    
+    // Get stats
+    const stats = {
+      totalSessionsAsTeacher: await LearningSession.countDocuments({ teacherId: userId }),
+      totalSessionsAsLearner: await LearningSession.countDocuments({ learnerId: userId }),
+      pendingRequests: await ContactRequest.countDocuments({
+        $or: [
+          { requesterId: userId, status: 'pending' },
+          { teacherId: { $in: await PeerTeacher.find({ addedBy: userId }).distinct('_id') }, status: 'pending' }
+        ]
+      }),
+      upcomingSessionsCount: await LearningSession.countDocuments({
+        $or: [
+          { teacherId: userId },
+          { learnerId: userId }
+        ],
+        status: { $in: ['scheduled', 'rescheduled'] },
+        scheduledDate: { $gte: new Date() }
+      }),
+    };
+    
+    res.json({
+      upcomingSessions,
+      pendingRequests,
+      recentCompletedSessions,
+      stats
+    });
+    
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

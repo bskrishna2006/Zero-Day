@@ -4,10 +4,13 @@
 
 ### Prerequisites
 - Node.js (v16 or higher)
-- MongoDB (running on localhost:27017)
+- MongoDB Atlas account
 - Git
 
-### 1. Clone and Install Dependencies
+### 1. 1. **MongoDB Connection Error**
+   - Ensure your MongoDB Atlas connection string is correct
+   - Check that your IP address is whitelisted in MongoDB Atlas
+   - Check connection string in `.env` filene and Install Dependencies
 
 ```bash
 # Install backend dependencies
@@ -24,7 +27,7 @@ npm install
 **Backend (.env):**
 ```env
 PORT=5000
-MONGODB_URI=mongodb://localhost:27017/campuslink
+MONGO_URI=mongodb+srv://username:password@your-cluster.mongodb.net/campuslink?retryWrites=true&w=majority
 JWT_SECRET=your-super-secret-jwt-key-here
 NODE_ENV=development
 ```
@@ -37,10 +40,7 @@ VITE_API_BASE_URL=http://localhost:5000/api
 ### 3. Database Setup
 
 ```bash
-# Start MongoDB service (varies by OS)
-# Windows: net start MongoDB
-# macOS: brew services start mongodb-community
-# Linux: sudo systemctl start mongod
+# No need to start local MongoDB - we're using MongoDB Atlas cloud service
 
 # Seed the database with sample data
 cd Backend
@@ -144,7 +144,7 @@ After running the seeder, you can use these credentials:
 
 - **Frontend**: http://localhost:8080
 - **Backend API**: http://localhost:5000/api
-- **MongoDB**: mongodb://localhost:27017/campuslink
+- **MongoDB**: MongoDB Atlas Cloud Database
 
 ## 🔧 Troubleshooting
 
@@ -184,5 +184,5 @@ npm run seed
 If you encounter any issues:
 1. Check the console for error messages
 2. Verify all dependencies are installed
-3. Ensure MongoDB is running
+3. Ensure you have an active internet connection for MongoDB Atlas
 4. Check environment variables are set correctly

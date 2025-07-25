@@ -74,4 +74,56 @@ notificationSchema.methods.markAsRead = function() {
   return this.save();
 };
 
+// Static method to create a learning session notification
+notificationSchema.statics.createSessionNotification = async function(
+  recipientId,
+  senderId,
+  sessionId,
+  type,
+  title,
+  message,
+  data = {}
+) {
+  return this.create({
+    recipient: recipientId,
+    sender: senderId,
+    title,
+    message,
+    type,
+    relatedModel: 'LearningSession',
+    relatedId: sessionId,
+    link: `/skill-exchange/sessions/${sessionId}`,
+    data: {
+      sessionId,
+      ...data
+    }
+  });
+};
+
+// Static method to create a contact request notification
+notificationSchema.statics.createRequestNotification = async function(
+  recipientId,
+  senderId,
+  requestId,
+  type,
+  title,
+  message,
+  data = {}
+) {
+  return this.create({
+    recipient: recipientId,
+    sender: senderId,
+    title,
+    message,
+    type,
+    relatedModel: 'ContactRequest',
+    relatedId: requestId,
+    link: `/skill-exchange/requests/${requestId}`,
+    data: {
+      requestId,
+      ...data
+    }
+  });
+};
+
 module.exports = mongoose.model('Notification', notificationSchema);

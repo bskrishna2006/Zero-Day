@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500" fill="none">
+  <g opacity="0.4" fill="white">
+    <circle cx="250" cy="250" r="90" stroke="white" stroke-width="2" opacity="0.15" />
+    <circle cx="250" cy="250" r="120" stroke="white" stroke-width="1.5" opacity="0.1" />
+    <circle cx="250" cy="250" r="150" stroke="white" stroke-width="1" opacity="0.08" />
+    
+    <!-- Education/Learning Icons -->
+    <g transform="translate(200, 175)">
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M100 25L50 0L0 25L50 50L100 25ZM50 60L15 42.5V70C15 75.5 30 85 50 85C70 85 85 75.5 85 70V42.5L50 60ZM50 100C40 100 0 95 0 70V95C0 100 25 115 50 115C75 115 100 100 100 95V70C100 95 60 100 50 100Z" />
+    </g>
+    
+    <!-- Device icons -->
+    <g transform="translate(75, 180)">
+      <rect x="0" y="0" width="60" height="90" rx="5" stroke="white" stroke-width="2" opacity="0.2" />
+      <rect x="5" y="5" width="50" height="70" rx="2" />
+      <circle cx="30" cy="85" r="5" opacity="0.5" />
+    </g>
+    
+    <g transform="translate(340, 190)">
+      <rect x="0" y="0" width="80" height="60" rx="5" stroke="white" stroke-width="2" opacity="0.2" />
+      <rect x="0" y="60" width="80" height="10" rx="2" />
+      <rect x="35" y="70" width="10" height="5" />
+    </g>
+    
+    <!-- Connection lines -->
+    <path d="M140 200 Q 195 150, 250 200" stroke="white" stroke-width="1" opacity="0.2" />
+    <path d="M250 200 Q 305 150, 360 200" stroke="white" stroke-width="1" opacity="0.2" />
+    
+    <!-- Abstract shapes -->
+    <circle cx="150" cy="100" r="15" opacity="0.2" />
+    <circle cx="350" cy="100" r="10" opacity="0.15" />
+    <circle cx="100" cy="300" r="20" opacity="0.1" />
+    <circle cx="380" cy="320" r="25" opacity="0.15" />
+    
+    <!-- Document icons -->
+    <g transform="translate(180, 320)">
+      <rect x="0" y="0" width="40" height="50" rx="3" />
+      <path d="M5 10 H 35" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+      <path d="M5 20 H 35" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+      <path d="M5 30 H 25" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+    </g>
+    
+    <g transform="translate(280, 320)">
+      <rect x="0" y="0" width="40" height="50" rx="3" />
+      <path d="M5 10 H 35" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+      <path d="M5 20 H 35" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+      <path d="M5 30 H 25" stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+    </g>
+    
+    <!-- Small decorative dots -->
+    <circle cx="120" cy="120" r="2" />
+    <circle cx="130" cy="130" r="2" />
+    <circle cx="110" cy="130" r="2" />
+    
+    <circle cx="370" cy="120" r="2" />
+    <circle cx="380" cy="130" r="2" />
+    <circle cx="360" cy="130" r="2" />
+    
+    <circle cx="120" cy="370" r="2" />
+    <circle cx="130" cy="380" r="2" />
+    <circle cx="110" cy="380" r="2" />
+    
+    <circle cx="370" cy="370" r="2" />
+    <circle cx="380" cy="380" r="2" />
+    <circle cx="360" cy="380" r="2" />
+  </g>
+</svg>

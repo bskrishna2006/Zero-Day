@@ -65,6 +65,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 interface PeerTeacher {
   id: string;
@@ -401,25 +402,53 @@ export default function SkillExchange() {
 
       // Submit to the API
       const apiUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'}/skill-exchange/teachers`;
+      
+      // Get a fresh token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        throw new Error("Authentication required. Please log in again.");
+      }
+      
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(teacherData),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create teacher profile");
+        let errorMessage = "Failed to create teacher profile";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // If parsing fails, use the status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        
+        // If it's an authentication error, provide a helpful message
+        if (response.status === 401 || response.status === 403) {
+          console.error("Authentication error:", errorMessage);
+          
+          // Suggest logging in again
+          throw new Error("Authentication failed. Please try logging out and logging in again.");
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
       console.log("Teacher created successfully:", result);
 
       // Fetch the updated list of teachers
-      const fetchResponse = await fetch(apiUrl);
+      const fetchResponse = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}` // Include token for consistent auth
+        }
+      });
       const fetchData = await fetchResponse.json();
       
       if (fetchData && fetchData.teachers && Array.isArray(fetchData.teachers)) {
@@ -460,11 +489,27 @@ export default function SkillExchange() {
       });
     } catch (error) {
       console.error("Error creating teacher profile:", error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create profile. Please try again.",
-        variant: "destructive",
-      });
+      
+      // Check if it's an authentication error
+      if (error instanceof Error && error.message.includes("Authentication")) {
+        toast({
+          title: "Authentication Error",
+          description: "Your session may have expired. Please log out and log in again.",
+          variant: "destructive",
+          action: <ToastAction altText="Logout" onClick={() => {
+            // Clear auth data and redirect to login
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            window.location.href = '/login';
+          }}>Logout</ToastAction>,
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to create profile. Please try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
 

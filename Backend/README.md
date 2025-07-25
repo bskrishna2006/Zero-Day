@@ -31,7 +31,7 @@ npm install
 npm install cors nodemon --save-dev
 ```
 
-3. Start MongoDB service on your system
+3. Ensure you have a MongoDB Atlas account and connection string
 
 4. Start the server:
 ```bash
@@ -184,7 +184,7 @@ npm run dev
 ## Production Deployment
 
 1. Set environment variables
-2. Ensure MongoDB is running
+2. Ensure you have an active internet connection for MongoDB Atlas
 3. Run: `npm start`
 
 ## Security Features

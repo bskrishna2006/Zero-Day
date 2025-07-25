@@ -17,7 +17,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
-.then(() => console.log('Connected to MongoDB Atlas'))
+.then(() => console.log('Connected to MongoDB Atlas successfully! Using connection string:', MONGO_URI.replace(/\/\/(.+?):(.+?)@/, '//$1:****@')))
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Import Routes
@@ -42,6 +42,41 @@ app.get('/api/health', (req, res) => {
 });
 
 // Error handling middleware
+// Database connection test endpoint
+app.get('/api/db-test', async (req, res) => {
+  try {
+    // Check if connected to MongoDB
+    if (mongoose.connection.readyState === 1) {
+      // Get database name from the connection string
+      const dbName = mongoose.connection.db.databaseName;
+      
+      // Get collection names
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const collectionNames = collections.map(collection => collection.name);
+      
+      res.json({
+        status: 'success',
+        message: 'Connected to MongoDB Atlas',
+        database: dbName,
+        collections: collectionNames,
+        connectionType: 'Atlas', // This should say Atlas if connected to cloud
+        host: mongoose.connection.host
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: 'Not connected to MongoDB',
+        readyState: mongoose.connection.readyState
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something went wrong!' });

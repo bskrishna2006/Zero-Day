@@ -2,7 +2,7 @@
 echo Starting CampusLink Development Environment...
 echo.
 
-echo Starting MongoDB (make sure MongoDB is installed and running)
+echo Using MongoDB Atlas cloud database
 echo.
 
 echo Starting Backend Server...

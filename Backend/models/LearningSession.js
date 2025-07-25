@@ -31,7 +31,7 @@ const learningSessionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['scheduled', 'completed', 'cancelled', 'missed'],
+    enum: ['scheduled', 'completed', 'cancelled', 'missed', 'rescheduled'],
     default: 'scheduled'
   },
   learnerFeedback: {
@@ -54,7 +54,22 @@ const learningSessionSchema = new mongoose.Schema({
     max: 5,
     default: null
   },
-  notes: {
+  notes: [{
+    content: {
+      type: String,
+      required: true
+    },
+    addedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    addedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  location: {
     type: String,
     default: null
   },
@@ -130,5 +145,48 @@ learningSessionSchema.pre('save', function(next) {
   }
   next();
 });
+
+// Helper to add a note to the session
+learningSessionSchema.methods.addNote = function(content, userId) {
+  if (!this.notes) {
+    this.notes = [];
+  }
+  
+  this.notes.push({
+    content,
+    addedBy: userId,
+    addedAt: new Date()
+  });
+  
+  return this;
+};
+
+// Helper to check if a user is a participant
+learningSessionSchema.methods.isParticipant = function(userId) {
+  return (
+    this.teacherId.toString() === userId.toString() ||
+    this.learnerId.toString() === userId.toString()
+  );
+};
+
+// Static method to find upcoming sessions for a user
+learningSessionSchema.statics.findUpcomingForUser = function(userId, options = {}) {
+  const { limit = 5, skip = 0 } = options;
+  
+  return this.find({
+    $or: [
+      { teacherId: userId },
+      { learnerId: userId }
+    ],
+    status: { $in: ['scheduled', 'rescheduled'] },
+    scheduledDate: { $gte: new Date() }
+  })
+    .sort({ scheduledDate: 1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('teacherId', 'name email')
+    .populate('learnerId', 'name email')
+    .populate('contactRequestId');
+};
 
 module.exports = mongoose.model('LearningSession', learningSessionSchema);

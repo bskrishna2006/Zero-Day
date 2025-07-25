@@ -1,0 +1,21 @@
+<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="dots" width="15" height="15" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.2)"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)" />
+  <rect width="100%" height="100%" fill="url(#dots)" />
+  <g fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="0.5">
+    <circle cx="25" cy="25" r="15" />
+    <circle cx="75" cy="75" r="20" />
+    <circle cx="85" cy="15" r="10" />
+    <circle cx="15" cy="85" r="12" />
+    <path d="M0,50 Q25,25 50,50 T100,50" />
+    <path d="M0,70 Q25,45 50,70 T100,70" />
+    <path d="M0,30 Q25,5 50,30 T100,30" />
+  </g>
+</svg>
