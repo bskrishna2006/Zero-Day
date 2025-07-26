@@ -31,6 +31,29 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  collegeIdCard: {
+    data: {
+      type: Buffer,
+      default: null
+    },
+    contentType: {
+      type: String,
+      default: null
+    },  
+    uploadedAt: {
+      type: Date,
+      default: null
+    },
+    verified: {
+      type: Boolean,
+      default: false
+    }
+  },
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected'],
+    default: 'verified'
   }
 }, {
   timestamps: true

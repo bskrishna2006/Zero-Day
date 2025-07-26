@@ -1,0 +1,18 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" fill="none"/>
+  <path d="M150 130H50C47.2386 130 45 127.761 45 125V75C45 72.2386 47.2386 70 50 70H150C152.761 70 155 72.2386 155 75V125C155 127.761 152.761 130 150 130Z" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M65 70V130" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M100 85L120 85" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M100 100L130 100" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M100 115L125 115" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M85 85L75 85" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M85 100L75 100" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M85 115L75 115" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M155 95H175C177.761 95 180 97.2386 180 100V150C180 152.761 177.761 155 175 155H75C72.2386 155 70 152.761 70 150V130" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M100 45C100 42.2386 102.239 40 105 40H125C127.761 40 130 42.2386 130 45V70" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M45 95H25C22.2386 95 20 92.7614 20 90V40C20 37.2386 22.2386 35 25 35H75C77.7614 35 80 37.2386 80 40V70" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.2"/>
+  <circle cx="100" cy="170" r="20" fill="currentColor" opacity="0.1"/>
+  <circle cx="100" cy="170" r="15" fill="currentColor" opacity="0.15"/>
+  <path d="M95 170L105 170" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M100 165L100 175" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

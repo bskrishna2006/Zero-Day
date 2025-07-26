@@ -71,6 +71,8 @@ const categories = [
   "Exams",
   "Sports",
   "General",
+  "Tech News",
+  "Opportunities",
 ];
 
 const getCategoryConfig = (category: string) => {
@@ -111,6 +113,18 @@ const getCategoryConfig = (category: string) => {
       icon: "📢",
       accentColor: "border-l-slate-500",
     },
+    "Tech News": {
+      color: "bg-cyan-100 text-cyan-800 border-cyan-300",
+      bgGradient: "from-cyan-50 to-cyan-100/50",
+      icon: "📱",
+      accentColor: "border-l-cyan-500",
+    },
+    Opportunities: {
+      color: "bg-emerald-100 text-emerald-800 border-emerald-300",
+      bgGradient: "from-emerald-50 to-emerald-100/50",
+      icon: "🚀",
+      accentColor: "border-l-emerald-500",
+    },
   };
   return configs[category as keyof typeof configs] || configs.General;
 };
@@ -141,6 +155,30 @@ export default function Announcements() {
   const [channelLabel, setChannelLabel] = useState("");
   const [channelIcon, setChannelIcon] = useState("");
   const [channelCategory, setChannelCategory] = useState("");
+
+  // Helper function to get icons for categories
+  const getIconForCategory = (category: string) => {
+    switch(category) {
+      case "Academic":
+        return "🎓";
+      case "Events":
+        return "🎉";
+      case "Holidays":
+        return "🏖️";
+      case "Exams":
+        return "📝";
+      case "Sports":
+        return "⚽";
+      case "General":
+        return "📢";
+      case "Tech News":
+        return "📱";
+      case "Opportunities":
+        return "🚀";
+      default:
+        return "📌";
+    }
+  };
 
   // Mock data
   useEffect(() => {
@@ -210,10 +248,42 @@ export default function Announcements() {
         unreadCount: 7,
       },
       {
+        id: "tech-news",
+        name: "tech-news",
+        label: "Tech News",
+        icon: "📱",
+        category: "Tech News",
+        unreadCount: 10,
+      },
+      {
+        id: "hackathons",
+        name: "hackathons",
+        label: "Hackathons",
+        icon: "🚀",
+        category: "Opportunities",
+        unreadCount: 7,
+      },
+      {
+        id: "internships",
+        name: "internships",
+        label: "Internships",
+        icon: "💼",
+        category: "Opportunities",
+        unreadCount: 15,
+      },
+      {
+        id: "tech-events",
+        name: "tech-events",
+        label: "Tech Events",
+        icon: "💻",
+        category: "Tech News",
+        unreadCount: 8,
+      },
+      {
         id: "tech",
         name: "tech-updates",
         label: "Tech Updates",
-        icon: "💻",
+        icon: "�️",
         category: "Activities",
         unreadCount: 18,
       },
@@ -1076,6 +1146,101 @@ export default function Announcements() {
                   })
               )}
             </AnimatePresence>
+          </motion.div>
+
+          {/* Tech News & Opportunities Feed Section */}
+          <motion.div
+            className="mt-12 mb-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <div className="flex items-center gap-2 mb-6">
+              <div className="bg-gradient-to-r from-blue-600 to-teal-500 p-1.5 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight">Tech News & Opportunities Feed</h2>
+            </div>
+            
+            <p className="text-muted-foreground mb-6">
+              Stay updated with the latest tech news, hackathons, internships, and opportunities to keep yourself competitive.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+              {/* Tech News Section */}
+              <Card className="overflow-hidden border-none bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 shadow-md">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-blue-100 dark:bg-blue-900/50 p-1.5 rounded-lg">
+                      <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <CardTitle className="text-lg font-semibold">Tech News</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {filteredAnnouncements
+                      .filter(a => a.category === "Tech News")
+                      .slice(0, 3)
+                      .map(announcement => (
+                        <div key={announcement.id} className="flex items-start gap-3 pb-3 border-b last:border-0">
+                          <div className="text-xl">{getIconForCategory("Tech News")}</div>
+                          <div>
+                            <h4 className="font-medium">{announcement.title}</h4>
+                            <p className="text-sm text-muted-foreground line-clamp-2">{announcement.description}</p>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              <span>{formatDate(announcement.date)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    {filteredAnnouncements.filter(a => a.category === "Tech News").length === 0 && (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <p>No tech news available at the moment.</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Opportunities Section */}
+              <Card className="overflow-hidden border-none bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/30 dark:to-emerald-950/30 shadow-md">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-emerald-100 dark:bg-emerald-900/50 p-1.5 rounded-lg">
+                      <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <CardTitle className="text-lg font-semibold">Opportunities</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {filteredAnnouncements
+                      .filter(a => a.category === "Opportunities")
+                      .slice(0, 3)
+                      .map(announcement => (
+                        <div key={announcement.id} className="flex items-start gap-3 pb-3 border-b last:border-0">
+                          <div className="text-xl">{getIconForCategory("Opportunities")}</div>
+                          <div>
+                            <h4 className="font-medium">{announcement.title}</h4>
+                            <p className="text-sm text-muted-foreground line-clamp-2">{announcement.description}</p>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              <span>{formatDate(announcement.date)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    {filteredAnnouncements.filter(a => a.category === "Opportunities").length === 0 && (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <p>No opportunities available at the moment.</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </motion.div>
         </div>
       </div>

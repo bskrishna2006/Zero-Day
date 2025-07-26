@@ -27,12 +27,21 @@ export default function Login() {
         description: "You have been successfully logged in.",
       });
       navigate('/dashboard');
-    } catch (error) {
-      toast({
-        title: "Login failed",
-        description: "Please check your credentials and try again.",
-        variant: "destructive",
-      });
+    } catch (error: any) {
+      // Only keep the rejection check for prototype
+      if (error.message?.includes('verification was rejected')) {
+        toast({
+          title: "Verification Rejected",
+          description: "Your account verification was rejected. Please contact the administrator.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Login failed",
+          description: "Please check your credentials and try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
 

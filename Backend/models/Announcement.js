@@ -13,7 +13,7 @@ const announcementSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['Academic', 'Events', 'Holidays', 'Exams', 'Sports', 'General']
+    enum: ['Academic', 'Events', 'Holidays', 'Exams', 'Sports', 'General', 'Tech News', 'Opportunities']
   },
   channel: {
     type: String,

@@ -51,8 +51,12 @@ export const authAPI = {
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
   
-  signup: (email: string, password: string, name: string, role: string) =>
-    api.post('/auth/signup', { email, password, name, role }),
+  signup: (formData: FormData) =>
+    api.post('/auth/signup', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }),
   
   verifyToken: () =>
     api.get('/auth/verify'),
@@ -82,8 +86,22 @@ export const timetableAPI = {
 
 export const complaintsAPI = {
   getAll: () => api.get('/complaints'),
-  create: (data: any) => api.post('/complaints', data),
-  update: (id: string, data: any) => api.put(`/complaints/${id}`, data),
+  create: (data: FormData) => {
+    // For FormData, axios automatically sets the correct Content-Type
+    return api.post('/complaints', data, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  update: (id: string, data: any) => {
+    // If data is FormData, use multipart/form-data, otherwise use JSON
+    const headers = data instanceof FormData 
+      ? { 'Content-Type': 'multipart/form-data' }
+      : { 'Content-Type': 'application/json' };
+    
+    return api.put(`/complaints/${id}`, data, { headers });
+  },
   delete: (id: string) => api.delete(`/complaints/${id}`),
 };
 

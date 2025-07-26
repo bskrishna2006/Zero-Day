@@ -7,12 +7,14 @@ export interface User {
   email: string;
   name: string;
   role: 'student' | 'admin';
+  verificationStatus?: 'pending' | 'verified' | 'rejected';
+  idCardUrl?: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string, role: 'student' | 'admin') => Promise<void>;
+  signup: (email: string, password: string, name: string, role: 'student' | 'admin', idCard?: File | null) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -71,41 +73,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const response = await authAPI.login(email, password);
-      const { token, user: userData } = response.data;
+      const { token, user: userData, verificationStatus } = response.data;
+      
+      // Check if user has verification status issues
+      if (verificationStatus === 'pending') {
+        throw new Error('Your account is pending verification. Please wait for admin approval.');
+      }
+      
+      if (verificationStatus === 'rejected') {
+        throw new Error('Your account verification was rejected. Please contact the administrator.');
+      }
       
       const user: User = {
-        id: userData._id,
+        id: userData.id,
         email: userData.email,
         name: userData.name,
-        role: userData.role
+        role: userData.role,
+        verificationStatus: userData.verificationStatus,
+        idCardUrl: userData.idCardUrl
       };
 
       setAuthData(token, user);
       setUser(user);
     } catch (error: any) {
-      const message = error.response?.data?.message || 'Login failed';
+      const message = error.response?.data?.message || error.message || 'Login failed';
       throw new Error(message);
     } finally {
       setLoading(false);
     }
   };
 
-  const signup = async (email: string, password: string, name: string, role: 'student' | 'admin') => {
+  const signup = async (email: string, password: string, name: string, role: 'student' | 'admin', idCard?: File | null) => {
     setLoading(true);
     try {
-      const response = await authAPI.signup(email, password, name, role);
+      // Use FormData for multipart/form-data when uploading files
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('password', password);
+      formData.append('name', name);
+      formData.append('role', role);
+      
+      // Add ID card file if provided (required for students)
+      if (idCard) {
+        console.log('Appending ID card to form data:', idCard.name, idCard.type, idCard.size);
+        formData.append('idCard', idCard);
+      }
+      
+      // Log form data (for debugging)
+      console.log('Form data entries:');
+      for (const pair of (formData as any).entries()) {
+        console.log(pair[0], pair[0] === 'idCard' ? 'File object present' : pair[1]);
+      }
+      
+      const response = await authAPI.signup(formData);
+      console.log('Signup response:', response.data);
       const { token, user: userData } = response.data;
       
       const user: User = {
-        id: userData._id,
+        id: userData.id || userData._id,
         email: userData.email,
         name: userData.name,
-        role: userData.role
+        role: userData.role,
+        verificationStatus: userData.verificationStatus,
+        idCardUrl: userData.idCardUrl
       };
 
+      // For prototype, all users get immediate access
       setAuthData(token, user);
       setUser(user);
+      
+      // No need to check verification status for prototype
     } catch (error: any) {
+      console.error('Signup error in AuthContext:', error);
       const message = error.response?.data?.message || 'Signup failed';
       throw new Error(message);
     } finally {

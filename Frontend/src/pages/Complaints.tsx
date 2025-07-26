@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,79 +8,102 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Calendar, Plus, Search, User, CheckCircle, Loader2, Clock } from 'lucide-react';
+import { Calendar, Plus, Search, User, CheckCircle, Loader2, Clock, AlarmClock, Filter } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useComplaints, useCreateComplaint, useUpdateComplaint } from '@/hooks/useComplaints';
 
 interface Complaint {
-  id: string;
+  _id: string;
   title: string;
   description: string;
   category: string;
   status: 'pending' | 'in-progress' | 'resolved';
-  date: string;
-  submittedBy: string;
-  imageUrl?: string; // New: image preview URL
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  submittedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  submittedByName: string;
+  assignedTo?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  location?: string;
+  contactInfo?: {
+    email: string;
+    phone?: string;
+  };
+  attachments?: {
+    filename: string;
+    url: string;
+    uploadedAt: string;
+  }[];
+  comments?: {
+    _id: string;
+    author: {
+      _id: string;
+      name: string;
+    };
+    authorName: string;
+    message: string;
+    createdAt: string;
+  }[];
+  resolvedAt?: string;
+  estimatedResolution?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const categories = ['Water', 'Electricity', 'Cleaning', 'Maintenance', 'Internet', 'Security', 'Other'];
 const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  'in-progress': 'bg-blue-100 text-blue-800',
-  resolved: 'bg-green-100 text-green-800'
+  pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  'in-progress': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  resolved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+};
+
+const priorityColors = {
+  low: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200',
+  medium: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+  high: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  urgent: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
 };
 
 export default function Complaints() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const [filteredComplaints, setFilteredComplaints] = useState<Complaint[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Get complaints data from API
+  const { data: complaintsData, isLoading: isLoadingComplaints } = useComplaints();
+  const createComplaint = useCreateComplaint();
+  const updateComplaint = useUpdateComplaint();
   
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null); // New: image file
-  const [imagePreview, setImagePreview] = useState<string | null>(null); // New: preview URL
-
-  // Mock data
-  useEffect(() => {
-    const mockComplaints: Complaint[] = [
-      {
-        id: '1',
-        title: 'WiFi connectivity issues in Room 302',
-        description: 'Internet connection is very slow and frequently disconnects.',
-        category: 'Internet',
-        status: 'in-progress',
-        date: '2024-01-20',
-        submittedBy: 'John Doe',
-        imageUrl: 'https://via.placeholder.com/150', // Mock image
-      },
-      {
-        id: '2',
-        title: 'Water leakage in bathroom',
-        description: 'There is a water leak in the common bathroom on floor 2.',
-        category: 'Water',
-        status: 'pending',
-        date: '2024-01-19',
-        submittedBy: 'Jane Smith',
-        imageUrl: 'https://via.placeholder.com/150', // Mock image
-      }
-    ];
-    setComplaints(mockComplaints);
-    setFilteredComplaints(mockComplaints);
-  }, []);
+  const [location, setLocation] = useState('');
+  const [priority, setPriority] = useState('medium');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // Filter complaints
-  useEffect(() => {
-    let filtered = complaints;
+  const getFilteredComplaints = () => {
+    if (!complaintsData?.complaints) return [];
+    
+    let filtered = [...complaintsData.complaints];
     
     if (searchTerm) {
       filtered = filtered.filter(complaint =>
         complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        complaint.description.toLowerCase().includes(searchTerm.toLowerCase())
+        complaint.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (complaint.location && complaint.location.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
     
@@ -88,8 +111,14 @@ export default function Complaints() {
       filtered = filtered.filter(complaint => complaint.category === selectedCategory);
     }
     
-    setFilteredComplaints(filtered);
-  }, [complaints, searchTerm, selectedCategory]);
+    if (selectedStatus !== 'all') {
+      filtered = filtered.filter(complaint => complaint.status === selectedStatus);
+    }
+    
+    return filtered;
+  };
+  
+  const filteredComplaints = getFilteredComplaints();
 
   // Handle image file change
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,155 +132,219 @@ export default function Complaints() {
     }
   };
 
-  const handleSubmitComplaint = () => {
-    if (!title || !description || !category || !imageFile) {
+  const handleSubmitComplaint = async () => {
+    if (!title || !description || !category) {
       toast({
         title: "Error",
-        description: "Please fill in all fields, including attaching an image.",
+        description: "Please fill in all required fields.",
         variant: "destructive",
       });
       return;
     }
 
-    const newComplaint: Complaint = {
-      id: Date.now().toString(),
-      title,
-      description,
-      category,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0],
-      submittedBy: user?.name || 'Anonymous',
-      imageUrl: imagePreview || undefined,
-    };
+    setIsLoading(true);
 
-    setComplaints(prev => [newComplaint, ...prev]);
-    setTitle('');
-    setDescription('');
-    setCategory('');
-    setImageFile(null);
-    setImagePreview(null);
-    setIsDialogOpen(false);
-
-    toast({
-      title: "Success",
-      description: "Complaint submitted successfully.",
-    });
+    try {
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('description', description);
+      formData.append('category', category);
+      formData.append('priority', priority);
+      
+      if (location) {
+        formData.append('location', location);
+      }
+      
+      if (imageFile) {
+        formData.append('attachment', imageFile);
+      }
+      
+      await createComplaint.mutateAsync(formData);
+      
+      // Reset form after successful submission
+      setTitle('');
+      setDescription('');
+      setCategory('');
+      setLocation('');
+      setPriority('medium');
+      setImageFile(null);
+      setImagePreview(null);
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error('Error submitting complaint:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateComplaintStatus = (id: string, status: 'pending' | 'in-progress' | 'resolved') => {
-    setComplaints(prev => prev.map(complaint => 
-      complaint.id === id ? { ...complaint, status } : complaint
-    ));
-    toast({
-      title: "Status Updated",
-      description: "Complaint status has been updated.",
-    });
+  const handleUpdateComplaintStatus = async (id: string, status: 'pending' | 'in-progress' | 'resolved') => {
+    try {
+      await updateComplaint.mutateAsync({
+        id,
+        data: { status }
+      });
+    } catch (error) {
+      console.error('Error updating complaint status:', error);
+    }
   };
 
-  // Split complaints for student vs admin
-  const studentComplaints = complaints.filter(c => c.submittedBy === (user?.name || 'Anonymous'));
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+  
+  // Check if user can access complaints
+  const isAdmin = user?.role === 'admin';
 
-  if (user?.role === 'admin') {
+  if (isAdmin) {
     return (
-      <div className="min-h-screen py-8 px-2 md:px-0 bg-[#10141a]">
+      <div className="min-h-screen py-8 px-2 md:px-0">
         <div className="container space-y-8">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-4xl font-extrabold tracking-tight text-blue-200">Admin Complaints Dashboard</h1>
-              <p className="text-lg text-blue-400">Manage and resolve all hostel complaints</p>
+              <h1 className="text-4xl font-extrabold tracking-tight">Admin Complaints Dashboard</h1>
+              <p className="text-lg text-muted-foreground">Manage and resolve all hostel complaints</p>
             </div>
           </div>
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
-            <Input
-              placeholder="Search complaints..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-[#181c24] text-blue-100 border-blue-900 placeholder:text-blue-400"
-            />
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-full sm:w-[200px] bg-[#181c24] text-blue-100 border-blue-900">
-                <SelectValue placeholder="Filter by category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative flex-grow">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search complaints..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4" />
+                    <SelectValue placeholder="Category" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <div className="flex items-center gap-2">
+                    <AlarmClock className="h-4 w-4" />
+                    <SelectValue placeholder="Status" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
+                  <SelectItem value="resolved">Resolved</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {/* Table/List View */}
-          <div className="overflow-x-auto rounded-xl shadow-lg">
-            <table className="min-w-full bg-[#181c24] text-blue-100">
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="min-w-full divide-y">
               <thead>
-                <tr className="bg-[#23283a] text-blue-300">
-                  <th className="px-4 py-3 text-left">Title</th>
-                  <th className="px-4 py-3 text-left">Category</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Submitted By</th>
-                  <th className="px-4 py-3 text-left">Image</th>
-                  <th className="px-4 py-3 text-left">Actions</th>
+                <tr className="bg-muted/50">
+                  <th className="px-4 py-3 text-left text-sm font-medium">Title</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Category</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Priority</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Submitted By</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Location</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredComplaints.length === 0 ? (
+              <tbody className="divide-y">
+                {isLoadingComplaints ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-blue-400">No complaints found.</td>
+                    <td colSpan={8} className="px-4 py-12 text-center">
+                      <div className="flex justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">Loading complaints...</p>
+                    </td>
+                  </tr>
+                ) : filteredComplaints.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                      No complaints found. Enjoy the peace! 🎉
+                    </td>
                   </tr>
                 ) : (
                   filteredComplaints.map((complaint) => (
-                    <tr key={complaint.id} className="border-b border-blue-900 hover:bg-[#23283a] transition">
-                      <td className="px-4 py-3 font-bold text-blue-100">{complaint.title}</td>
+                    <tr key={complaint._id} className="hover:bg-muted/50">
                       <td className="px-4 py-3">
-                        <Badge className="bg-gradient-to-r from-blue-400 to-teal-400 text-white font-semibold border-0">
+                        <div className="font-medium">{complaint.title}</div>
+                        <div className="text-xs text-muted-foreground truncate max-w-[280px]">
+                          {complaint.description.substring(0, 60)}...
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">
                           {complaint.category}
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold shadow border-0
-                          ${complaint.status === 'pending' ? 'bg-yellow-400/80 text-yellow-900' : complaint.status === 'in-progress' ? 'bg-blue-400/80 text-white' : 'bg-green-400/80 text-white'}`}
-                        >
-                          {complaint.status.replace('-', ' ')}
-                        </span>
+                        <Badge className={statusColors[complaint.status]}>
+                          {complaint.status === 'in-progress' ? 'In Progress' : 
+                          complaint.status.charAt(0).toUpperCase() + complaint.status.slice(1)}
+                        </Badge>
                       </td>
-                      <td className="px-4 py-3">{new Date(complaint.date).toLocaleDateString()}</td>
-                      <td className="px-4 py-3">{complaint.submittedBy}</td>
                       <td className="px-4 py-3">
-                        {complaint.imageUrl && (
-                          <img src={complaint.imageUrl} alt="Complaint" className="h-10 w-10 object-cover rounded shadow border border-blue-900" />
-                        )}
+                        <Badge className={priorityColors[complaint.priority]}>
+                          {complaint.priority.charAt(0).toUpperCase() + complaint.priority.slice(1)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground text-sm">
+                        <div className="flex items-center">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          {formatDate(complaint.createdAt)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center">
+                          <User className="h-4 w-4 mr-2 text-muted-foreground" />
+                          <span className="text-sm">{complaint.submittedByName}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {complaint.location || "-"}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="hover:bg-yellow-400/30 hover:text-yellow-900 border-0 bg-[#23283a]/70 text-blue-100 font-bold"
-                            onClick={() => updateComplaintStatus(complaint.id, 'pending')}
-                            disabled={complaint.status === 'pending'}
-                          >
-                            Pending
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="hover:bg-blue-400/30 hover:text-white border-0 bg-[#23283a]/70 text-blue-100 font-bold"
-                            onClick={() => updateComplaintStatus(complaint.id, 'in-progress')}
-                            disabled={complaint.status === 'in-progress'}
-                          >
-                            In Progress
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="hover:bg-green-400/30 hover:text-white border-0 bg-[#23283a]/70 text-blue-100 font-bold"
-                            onClick={() => updateComplaintStatus(complaint.id, 'resolved')}
-                            disabled={complaint.status === 'resolved'}
-                          >
-                            Resolved
-                          </Button>
+                          {complaint.status !== 'in-progress' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateComplaintStatus(complaint._id, 'in-progress')}
+                            >
+                              <Clock className="h-4 w-4 mr-1" /> Start
+                            </Button>
+                          )}
+                          {complaint.status !== 'resolved' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateComplaintStatus(complaint._id, 'resolved')}
+                              className="text-green-600 border-green-600"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" /> Resolve
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -266,12 +359,12 @@ export default function Complaints() {
   }
 
   return (
-    <div className="min-h-screen py-8 px-2 md:px-0 bg-[#181c24]">
+    <div className="min-h-screen py-8 px-2 md:px-0">
       <div className="container space-y-8 relative z-10">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-white drop-shadow-lg">Complaints</h1>
-            <p className="text-lg text-blue-200">Report and track hostel issues</p>
+            <h1 className="text-4xl font-extrabold tracking-tight">Complaints</h1>
+            <p className="text-lg text-muted-foreground">Report and track hostel issues</p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -279,10 +372,10 @@ export default function Complaints() {
                 <Plus className="h-8 w-8" />
               </button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px] rounded-2xl border border-blue-400/40 bg-[#23283a]/80 backdrop-blur-2xl shadow-2xl animate-fade-in">
+            <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle className="text-2xl font-bold text-white">Submit New Complaint</DialogTitle>
-                <DialogDescription className="text-blue-200">
+                <DialogTitle>Submit New Complaint</DialogTitle>
+                <DialogDescription>
                   Report an issue that needs attention from the administration.
                 </DialogDescription>
               </DialogHeader>
@@ -296,18 +389,43 @@ export default function Complaints() {
                     placeholder="Brief description of the issue"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="category">Category</Label>
+                    <Select value={category} onValueChange={setCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select value={priority} onValueChange={setPriority}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="urgent">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="Room number, floor, building, etc."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Detailed Description</Label>
@@ -320,7 +438,7 @@ export default function Complaints() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="image">Attach Image</Label>
+                  <Label htmlFor="image">Attach Image (optional)</Label>
                   <Input
                     id="image"
                     type="file"
@@ -328,12 +446,33 @@ export default function Complaints() {
                     onChange={handleImageChange}
                   />
                   {imagePreview && (
-                    <img src={imagePreview} alt="Preview" className="mt-2 max-h-32 rounded border" />
+                    <div className="mt-2 relative">
+                      <img src={imagePreview} alt="Preview" className="max-h-32 rounded border" />
+                      <Button 
+                        size="sm" 
+                        variant="destructive"
+                        className="absolute top-1 right-1 h-6 w-6 p-0 rounded-full"
+                        onClick={() => {
+                          setImageFile(null);
+                          setImagePreview(null);
+                        }}
+                      >
+                        &times;
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
               <DialogFooter>
-                <Button className="bg-gradient-to-r from-blue-600 via-purple-600 to-teal-400 text-white shadow-lg font-bold rounded-xl px-6 py-2 hover:scale-105 hover:shadow-[0_0_20px_5px_rgba(0,255,255,0.3)] transition-all" onClick={handleSubmitComplaint}>Submit Complaint</Button>
+                <Button onClick={handleSubmitComplaint} disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
+                    </>
+                  ) : (
+                    'Submit Complaint'
+                  )}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -362,72 +501,92 @@ export default function Complaints() {
           </Select>
         </div>
         {/* Complaints List */}
-        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-3">
-          {studentComplaints.length === 0 ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {isLoadingComplaints ? (
             <div className="flex flex-col items-center justify-center py-16 col-span-full">
-              <img src="https://undraw.co/api/illustrations/undraw_empty_re_opql.svg" alt="No complaints" className="w-40 mb-4" />
-              <p className="text-xl text-blue-200 font-semibold">No complaints found. Enjoy the peace! 🎉</p>
+              <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+              <p>Loading complaints...</p>
+            </div>
+          ) : filteredComplaints.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 col-span-full">
+              <img src="/empty-state.svg" alt="No complaints" className="w-40 mb-4 opacity-70" />
+              <p className="text-xl font-semibold">No complaints found. Enjoy the peace! 🎉</p>
             </div>
           ) : (
-            studentComplaints.map((complaint) => (
-              <Card key={complaint.id} className="relative overflow-hidden rounded-2xl border-2 border-transparent bg-[#23283a]/70 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] transition-transform hover:scale-[1.025] group">
-                {/* Neon/gradient accent line */}
-                <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-blue-500 via-purple-500 to-teal-400 shadow-[0_0_16px_4px_rgba(0,255,255,0.5)] rounded-l-2xl" />
-                {/* Glowing border effect */}
-                <div className="absolute inset-0 pointer-events-none rounded-2xl border-2 border-transparent group-hover:border-[3px] group-hover:border-cyan-400 group-hover:shadow-[0_0_32px_8px_rgba(0,255,255,0.4)] transition-all" />
-                <CardHeader className="relative z-10">
+            filteredComplaints.map((complaint) => (
+              <Card key={complaint._id} className="relative overflow-hidden hover:shadow-lg transition-all">
+                <div className={`absolute left-0 top-0 h-full w-1 
+                  ${complaint.status === 'pending' ? 'bg-yellow-400' : 
+                    complaint.status === 'in-progress' ? 'bg-blue-500' : 
+                    'bg-green-500'}`} 
+                />
+                <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-teal-400 flex items-center justify-center text-white font-bold text-lg shadow">
-                        <User className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg font-bold text-white drop-shadow">{complaint.title}</CardTitle>
-                        <div className="flex items-center space-x-2 text-xs text-blue-200 mt-1">
-                          <div className="flex items-center">
-                            <Calendar className="mr-1 h-3 w-3" />
-                            {new Date(complaint.date).toLocaleDateString()}
-                          </div>
+                    <div>
+                      <CardTitle className="text-lg font-bold">{complaint.title}</CardTitle>
+                      <div className="flex items-center space-x-2 text-xs text-muted-foreground mt-1">
+                        <div className="flex items-center">
+                          <Calendar className="mr-1 h-3 w-3" />
+                          {formatDate(complaint.createdAt)}
+                        </div>
+                        {complaint.location && (
                           <div className="flex items-center gap-1">
                             <User className="h-3 w-3" />
-                            {complaint.submittedBy}
+                            {complaint.location}
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge className="bg-gradient-to-r from-blue-400 to-teal-400 text-white font-semibold shadow border-0">
+                    <div className="flex flex-col gap-2 items-end">
+                      <Badge variant="outline" className="mb-1">
                         {complaint.category}
                       </Badge>
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold shadow border-0
-                        ${complaint.status === 'pending' ? 'bg-yellow-400/80 text-yellow-900 animate-pulse' : complaint.status === 'in-progress' ? 'bg-blue-400/80 text-white animate-glow' : 'bg-green-400/80 text-white animate-bounce'}`}
-                      >
-                        {complaint.status === 'pending' && <Clock className="w-4 h-4" />} 
-                        {complaint.status === 'in-progress' && <Loader2 className="w-4 h-4" />} 
-                        {complaint.status === 'resolved' && <CheckCircle className="w-4 h-4" />} 
+                      <Badge className={statusColors[complaint.status]}>
+                        {complaint.status === 'pending' && <Clock className="w-3 h-3 mr-1" />} 
+                        {complaint.status === 'in-progress' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />} 
+                        {complaint.status === 'resolved' && <CheckCircle className="w-3 h-3 mr-1" />} 
                         {complaint.status.replace('-', ' ')}
-                      </span>
+                      </Badge>
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="relative z-10">
-                  <p className="text-base text-blue-100 mb-4 font-medium">{complaint.description}</p>
-                  {complaint.imageUrl && (
-                    <div className="mb-4 flex justify-center">
-                      <img src={complaint.imageUrl} alt="Complaint" className="max-h-40 rounded-xl border-2 border-blue-400/40 shadow-lg" />
+                <CardContent>
+                  <p className="text-sm mb-4">{complaint.description}</p>
+                  {complaint.attachments && complaint.attachments.length > 0 && (
+                    <div className="mb-4">
+                      <img 
+                        src={complaint.attachments[0].url} 
+                        alt="Complaint" 
+                        className="max-h-40 w-full rounded-md border object-cover" 
+                        onError={(e) => {
+                          // Handle image load error
+                          console.error("Failed to load image:", complaint.attachments[0].url);
+                          e.currentTarget.src = "/empty-state.svg";
+                          e.currentTarget.className = "max-h-40 rounded-md border object-contain opacity-50";
+                        }}
+                      />
                     </div>
                   )}
-                  {/* Status Stepper */}
-                  <div className="flex items-center mb-4">
-                    <div className={`flex-1 h-2 rounded-full transition-all duration-500
-                      ${complaint.status === 'pending' ? 'bg-yellow-400/60' : complaint.status === 'in-progress' ? 'bg-blue-400/60' : 'bg-green-400/60'}`}></div>
-                    <div className="ml-2 text-xs font-semibold text-blue-200">
-                      {complaint.status === 'pending' && 'Pending'}
-                      {complaint.status === 'in-progress' && 'In Progress'}
-                      {complaint.status === 'resolved' && 'Resolved'}
-                    </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className={priorityColors[complaint.priority]}>
+                      {complaint.priority.charAt(0).toUpperCase() + complaint.priority.slice(1)} Priority
+                    </Badge>
+                    
+                    {complaint.estimatedResolution && complaint.status !== 'resolved' && (
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Clock className="w-3 h-3 mr-1" />
+                        Est. resolution: {formatDate(complaint.estimatedResolution)}
+                      </div>
+                    )}
+                    
+                    {complaint.resolvedAt && complaint.status === 'resolved' && (
+                      <div className="flex items-center text-xs text-green-600">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Resolved: {formatDate(complaint.resolvedAt)}
+                      </div>
+                    )}
                   </div>
-                  {/* No admin controls for students */}
                 </CardContent>
               </Card>
             ))

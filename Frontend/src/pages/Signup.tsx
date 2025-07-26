@@ -17,23 +17,79 @@ export default function Signup() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<'student' | 'admin'>('student');
   const [showPassword, setShowPassword] = useState(false);
+  const [idCard, setIdCard] = useState<File | null>(null);
+  const [idCardPreview, setIdCardPreview] = useState<string | null>(null);
   const { signup, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Handle ID card file selection
+  const handleIdCardChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "ID card image must be less than 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Check file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/gif'];
+      if (!validTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload an image file (JPEG, PNG, GIF, WebP)",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setIdCard(file);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIdCardPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await signup(email, password, name, role);
+    
+    // Validate form
+    if (role === 'student' && !idCard) {
       toast({
-        title: "Account created!",
+        title: "ID Card Required",
+        description: "Please upload your college ID card for verification.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      console.log('Submitting with ID card:', idCard);
+      await signup(email, password, name, role, idCard);
+      
+      // For prototype: directly log in all users without verification
+      toast({
+        title: "Account created successfully!",
         description: "Welcome to CampusLink.",
       });
+      
+      // Redirect all users directly to dashboard
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Signup error:', error);
       toast({
         title: "Signup failed",
-        description: "Please try again.",
+        description: error.message || "Please try again.",
         variant: "destructive",
       });
     }
@@ -238,6 +294,76 @@ export default function Signup() {
                       </Label>
                     </RadioGroup>
                   </div>
+                  
+                  {/* ID Card Upload Field - Only shown for students */}
+                  {role === 'student' && (
+                    <div className="mt-4 space-y-2">
+                      <Label htmlFor="idCard" className="text-sm font-[600] block mb-2">
+                        College ID Card <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="border-2 border-dashed border-primary/30 rounded-[12px] p-4 bg-[#e0e0e0] shadow-[inset_2px_2px_4px_#bebebe,inset_-2px_-2px_4px_#ffffff]">
+                        {idCardPreview ? (
+                          <div className="space-y-3">
+                            <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                              <img 
+                                src={idCardPreview} 
+                                alt="ID Card Preview" 
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIdCard(null);
+                                  setIdCardPreview(null);
+                                }}
+                                className="absolute top-2 right-2 bg-white/80 rounded-full p-1 shadow-md hover:bg-white transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            </div>
+                            <p className="text-xs text-center text-muted-foreground">Click to change</p>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-10 w-10 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            <p className="mt-2 text-sm font-[500]">Upload your college ID card</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              JPG, PNG or PDF up to 5MB
+                            </p>
+                          </div>
+                        )}
+                        <input
+                          id="idCard"
+                          name="idCard"
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg,image/webp,image/gif"
+                          onChange={handleIdCardChange}
+                          className="sr-only"
+                          required={role === 'student'}
+                        />
+                        <label 
+                          htmlFor="idCard"
+                          className="mt-3 block w-full cursor-pointer"
+                        >
+                          <Button 
+                            type="button" 
+                            variant={idCardPreview ? "outline" : "default"}
+                            className="w-full"
+                            onClick={() => document.getElementById('idCard')?.click()}
+                          >
+                            {idCardPreview ? 'Change ID Card' : 'Select ID Card'}
+                          </Button>
+                        </label>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Your ID card is required for account verification. Your account will be in pending status until verification.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 
                 <Button 
