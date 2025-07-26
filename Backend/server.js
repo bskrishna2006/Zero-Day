@@ -31,6 +31,7 @@ const lostFoundRoutes = require('./routes/lostFound');
 const timetableRoutes = require('./routes/timetable');
 const complaintRoutes = require('./routes/complaints');
 const skillExchangeRoutes = require('./routes/skillExchange');
+const chatbotRoutes = require('./routes/chatbot');
 
 // Use Routes
 app.use('/api/auth', authRoutes);
@@ -39,6 +40,7 @@ app.use('/api/lost-found', lostFoundRoutes);
 app.use('/api/timetable', timetableRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/skill-exchange', skillExchangeRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

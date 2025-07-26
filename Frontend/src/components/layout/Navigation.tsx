@@ -6,7 +6,8 @@ import {
   Search, 
   Calendar, 
   MessageSquare,
-  BookOpen
+  BookOpen,
+  MessageCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +41,11 @@ const navigation = [
     name: 'Complaints',
     href: '/complaints',
     icon: MessageSquare,
+  },
+  {
+    name: 'Campus AI',
+    href: '/chat',
+    icon: MessageCircle,
   },
 ];
 
